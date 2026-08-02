@@ -1,21 +1,16 @@
 import { type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 
+// No runtime export — middleware runs on Edge by default.
+// @supabase/ssr is excluded from Edge bundling via serverExternalPackages
+// in next.config.ts, which silences the process.version warning.
+
 export async function middleware(request: NextRequest) {
   return await updateSession(request);
 }
 
 export const config = {
   matcher: [
-    /*
-     * Run on every path EXCEPT:
-     * - static assets (_next/static, _next/image, favicon, common image exts)
-     * - webhook receivers under /api/v1/hooks — these authenticate via
-     *   platform signature verification (v16 design: signed payloads go
-     *   to webhooks_inbox; unverifiable ones to webhook_quarantine), not
-     *   user session — running user-session middleware on them would be
-     *   the wrong auth model entirely, not just redundant.
-     */
-    "/((?!_next/static|_next/image|favicon.ico|api/v1/hooks|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
