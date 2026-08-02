@@ -35,11 +35,11 @@ export async function updateSession(request: NextRequest) {
     // createServerClient would previously throw with an opaque internal
     // error; this surfaces it clearly in logs instead, then fails open.
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     if (!supabaseUrl || !supabaseAnonKey) {
       console.error(
         "[middleware] Missing Supabase env vars — NEXT_PUBLIC_SUPABASE_URL:",
-        !!supabaseUrl, "NEXT_PUBLIC_SUPABASE_ANON_KEY:", !!supabaseAnonKey,
+        !!supabaseUrl, "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:", !!supabaseAnonKey,
         "— failing open (request passes through without session refresh)."
       );
       return NextResponse.next({ request });
