@@ -48,6 +48,7 @@ export async function completeConnection(params: {
     .single();
 
   if (accountError || !upsertedAccount) {
+    console.error("[completeConnection] platform_accounts upsert failed:", accountError?.message ?? "no row returned", accountError?.details ?? "", accountError?.hint ?? "");
     return { ok: false, errorCode: "backend_not_ready" };
   }
 
@@ -61,6 +62,7 @@ export async function completeConnection(params: {
   }, { onConflict: "platform_account_id" });
 
   if (tokenError) {
+    console.error("[completeConnection] oauth_tokens upsert failed:", tokenError.message, tokenError.details ?? "", tokenError.hint ?? "");
     return { ok: false, errorCode: "token_store_failed" };
   }
 
@@ -84,6 +86,7 @@ export async function completeConnection(params: {
   });
 
   if (jobError) {
+    console.error(`[completeConnection] sync_jobs insert failed for platform_account ${upsertedAccount.id}:`, jobError.message, jobError.details ?? "", jobError.hint ?? "");
     return { ok: false, errorCode: "connected_but_sync_not_queued" };
   }
 
