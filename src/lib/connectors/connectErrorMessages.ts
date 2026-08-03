@@ -10,7 +10,7 @@ const CONNECT_ERROR_MESSAGES: Record<string, string> = {
   invalid_state: "The connection attempt couldn't be verified and was rejected for your security. Please try connecting again.",
   unknown_connector: "That platform isn't recognized. Please try again from the Integrations page.",
   no_accounts_found: "No ad accounts were found on that Meta login. Make sure the account you logged in with has access to at least one ad account.",
-  multiple_accounts_unsupported: "That Meta login has access to multiple ad accounts. Connecting a specific one isn't supported yet — this is real, upcoming work, not a bug.",
+  selection_expired: "Your account selection took too long or expired. Please reconnect and choose your account again.",
   backend_not_ready: "Something went wrong saving the connection. Please try again — if this keeps happening, let support know.",
   token_store_failed: "The connection succeeded but saving your credentials failed. Please try connecting again.",
   connected_but_sync_not_queued: "Your account is connected, but the first sync couldn't be scheduled yet. It should catch up automatically soon.",

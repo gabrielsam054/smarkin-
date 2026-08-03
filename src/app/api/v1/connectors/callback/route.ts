@@ -6,10 +6,12 @@ import { bootstrapConnectors } from "@/lib/connectors/bootstrap";
 import { encryptToken } from "@/lib/crypto/tokenEncryption";
 import { buildServiceRoleClient } from "@/lib/supabase/serviceClient";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
+import { completeConnection } from "@/lib/connectors/completeConnection";
 
 bootstrapConnectors();
 
 const STATE_COOKIE = "smarkin_oauth_state";
+const PENDING_SELECTION_COOKIE = "smarkin_pending_account_selection";
 
 /**
  * Single shared callback for every connector (matches how OAuth apps
@@ -97,100 +99,43 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(integrationsUrl);
     }
     if (accounts.length > 1) {
-      // Honest limitation, not a silent wrong choice: picking the first
-      // account automatically when several exist could connect an
-      // account the user didn't intend, which is worse than asking
-      // again. Account-selection UI is real, separate follow-up work,
-      // not built in this feature.
-      integrationsUrl.searchParams.set("connect_error", "multiple_accounts_unsupported");
-      return NextResponse.redirect(integrationsUrl);
+      // Closes the gap deliberately left open when this limitation was
+      // first built: rather than silently picking one account (which
+      // could connect an account the user didn't intend — worse than
+      // asking), the discovered accounts and the already-obtained
+      // tokens are stored in a short-lived, encrypted, httpOnly cookie,
+      // and the user picks explicitly on a real page. The OAuth dance
+      // doesn't need to repeat — Meta already granted access; this is
+      // just finishing the "which one" question honestly instead of
+      // guessing.
+      const encAccessToken = encryptToken(tokens.accessToken);
+      const encRefreshToken = tokens.refreshToken ? encryptToken(tokens.refreshToken) : null;
+      const pendingCookieStore = await cookies();
+      pendingCookieStore.set(PENDING_SELECTION_COOKIE, JSON.stringify({
+        connectorKey,
+        workspaceId,
+        accounts,
+        encAccessToken: encAccessToken.toString("base64"),
+        encRefreshToken: encRefreshToken ? encRefreshToken.toString("base64") : null,
+        expiresAt: tokens.expiresAt,
+        scopes: tokens.scopes,
+      }), {
+        httpOnly: true, secure: true, sameSite: "lax",
+        maxAge: 600, // same 10-minute window as the OAuth state cookie — a stale pending selection shouldn't linger
+        path: "/",
+      });
+
+      const selectUrl = new URL("/integrations/select-account", request.nextUrl.origin);
+      return NextResponse.redirect(selectUrl);
     }
     const account = accounts[0];
 
-    const encAccessToken = encryptToken(tokens.accessToken);
-    const encRefreshToken = tokens.refreshToken ? encryptToken(tokens.refreshToken) : null;
-
-    // Closes the reconnect gap flagged at the end of Feature 17: a plain
-    // insert() would violate platform_accounts' real unique constraint
-    // (workspace_id, connector_key, external_account_id) the moment a
-    // user reconnects an already-existing account — exactly the
-    // scenario Feature 17's revoked-detection creates, since detecting
-    // "revoked" is only useful if reconnecting afterward actually works.
-    // Upsert on that same constraint: same row, same id (Postgres
-    // upsert never changes the primary key), so oauth_tokens' existing
-    // reference stays valid — this updates the row in place rather than
-    // creating a duplicate or erroring.
-    const { data: upsertedAccount, error: accountError } = await supabase
-      .from("platform_accounts")
-      .upsert({
-        workspace_id: workspaceId, // the actual fix — was user.id, rejected by the real FK constraint
-        connector_key: connectorKey,
-        external_account_id: account.externalId,
-        display_name: account.displayName,
-        status: "active", // explicitly reset — this is the fix for a previously-revoked account reconnecting
-        connected_by: user.id,
-        connected_at: new Date().toISOString(),
-      }, { onConflict: "workspace_id,connector_key,external_account_id" })
-      .select("id")
-      .single();
-
-    if (accountError || !upsertedAccount) {
-      integrationsUrl.searchParams.set("connect_error", "backend_not_ready");
-      return NextResponse.redirect(integrationsUrl);
-    }
-
-    const { error: tokenError } = await supabase.from("oauth_tokens").upsert({
-      platform_account_id: upsertedAccount.id,
-      enc_access_token: encAccessToken,
-      enc_refresh_token: encRefreshToken,
-      key_version: 1,
-      expires_at: tokens.expiresAt,
-      scopes: tokens.scopes,
-    }, { onConflict: "platform_account_id" });
-
-    if (tokenError) {
-      integrationsUrl.searchParams.set("connect_error", "token_store_failed");
-      return NextResponse.redirect(integrationsUrl);
-    }
-
-    // Reset health state on reconnect — without this, a reconnected
-    // account would inherit its OLD fail_count/open-circuit state from
-    // before the revoke, sitting in a cooldown despite the connection
-    // now being genuinely healthy again. A fresh connection deserves a
-    // fresh circuit, not the previous connection's failure history.
-    await supabase.from("connector_health").upsert({
-      platform_account_id: upsertedAccount.id,
-      state: "closed",
-      fail_count: 0,
-      last_ok_at: null,
-      last_error: null,
-      opened_at: null,
-    }, { onConflict: "platform_account_id" }).then(({ error }) => {
-      if (error) console.error(`[oauth callback] failed to reset connector_health on reconnect for ${upsertedAccount.id}:`, error.message);
+    const result = await completeConnection({
+      supabase, workspaceId, connectorKey, userId: user.id, account, tokens,
     });
 
-    // The gap this feature exists to close: without this insert, a
-    // successful connection would sit forever with zero sync_jobs rows,
-    // and the cron worker (Feature 9) would never have anything to
-    // claim for it. job_class "backfill" — a new connection wants
-    // history pulled, not just the next incremental tick — matching
-    // the distinct job class the 2.1 blueprint named for exactly this
-    // "first connect" case (different queue priority/economics than
-    // steady-state incremental sync, per that blueprint's own gap 1.2).
-    // Also correct on reconnect: a gap since the revoke deserves a
-    // fresh backfill to catch up, not just resuming incremental ticks.
-    const { error: jobError } = await supabase.from("sync_jobs").insert({
-      platform_account_id: upsertedAccount.id,
-      job_class: "backfill",
-      status: "queued",
-    });
-
-    if (jobError) {
-      // The connection itself succeeded and is real — only the first
-      // sync's enqueue failed. Surface this distinctly rather than as a
-      // generic connect failure, since from the user's perspective the
-      // connection worked; only the first sync is delayed.
-      integrationsUrl.searchParams.set("connect_error", "connected_but_sync_not_queued");
+    if (!result.ok) {
+      integrationsUrl.searchParams.set("connect_error", result.errorCode);
       return NextResponse.redirect(integrationsUrl);
     }
 
