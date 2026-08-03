@@ -75,7 +75,7 @@ export default async function CampaignsPage() {
             <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
               <Clock size={18} className="text-primary" />
             </div>
-            <p className="font-semibold text-text-primary text-sm mb-1.5">Connected — first sync hasn't run yet</p>
+            <p className="font-semibold text-text-primary text-sm mb-1.5">Connected — first sync hasn&apos;t run yet</p>
             <p className="text-sm text-text-secondary max-w-sm">
               Your account is connected. Campaign data syncs automatically once a day — check back after the next sync.
             </p>

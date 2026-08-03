@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Zap, AlertCircle, RefreshCcw } from "lucide-react";
+import { ArrowLeft, Zap, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { generateIntelligenceReport } from "@/lib/intelligence";
 import { AppShell } from "@/components/layout/AppShell";
