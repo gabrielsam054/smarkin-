@@ -160,7 +160,7 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     throw new Error(`Meta Insights API returned ${res.status}`);
   }
 
-  const body = await res.json() as { data: Array<{ campaign_id: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }> };
+  const body = await res.json() as { data: Array<{ campaign_id: string; campaign_name?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }> };
 
   const capturedAt = new Date().toISOString();
   const snapshots = body.data.flatMap((row) => {
@@ -182,6 +182,35 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   if (snapshots.length === 0) {
     await recordSyncSuccess(job.platformAccountId); // ran cleanly, just no rows today — still a real success
     return;
+  }
+
+  // The gap this closes: campaign_name was requested from Meta's API
+  // the whole time and silently discarded — metric_snapshots only ever
+  // stored a raw campaign_id, with nowhere the campaign's actual name
+  // was captured. Upserting real campaign_entities rows here is what
+  // makes a genuine Campaigns page possible at all, not just a table of
+  // opaque ids next to numbers.
+  const campaignEntities = body.data
+    .filter((row) => row.campaign_name)
+    .map((row) => ({
+      workspace_id: account.workspace_id,
+      platform_account_id: job.platformAccountId,
+      external_id: row.campaign_id,
+      kind: "campaign" as const,
+      name: row.campaign_name,
+      synced_at: capturedAt,
+    }));
+
+  if (campaignEntities.length > 0) {
+    const { error: entityError } = await supabase
+      .from("campaign_entities")
+      .upsert(campaignEntities, { onConflict: "platform_account_id,external_id" });
+    if (entityError) {
+      // Don't abort the whole sync over this — the metrics themselves
+      // are still real and worth keeping even if the name-upsert
+      // failed; log clearly so it's visible without discarding the run.
+      console.error(`[sync] failed to upsert campaign_entities for platform_account ${job.platformAccountId}:`, entityError.message);
+    }
   }
 
   const { error: insertError } = await supabase.from("metric_snapshots").insert(snapshots);

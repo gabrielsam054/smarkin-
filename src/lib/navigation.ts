@@ -52,7 +52,7 @@ export const NAVIGATION: NavGroup[] = [
     label: "Advertising",
     items: [
       { label: "Decisions", href: "/decision/new", icon: Compass, status: "live" },
-      { label: "Campaigns", href: "/campaigns", icon: Megaphone, status: "reserved" },
+      { label: "Campaigns", href: "/campaigns", icon: Megaphone, status: "live" },
     ],
   },
   {
