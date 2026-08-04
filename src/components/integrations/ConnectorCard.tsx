@@ -20,6 +20,7 @@ export function ConnectorCard({ connector, account }: { connector: ConnectorDefi
   const router = useRouter();
   const [connecting, setConnecting] = useState(false);
   const [togglingPause, setTogglingPause] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleConnect() {
@@ -75,6 +76,33 @@ export function ConnectorCard({ connector, account }: { connector: ConnectorDefi
     }
   }
 
+  // The real gap being closed: Pause never actually disconnected
+  // anything, just changed status. This is the genuine, complete
+  // action — real confirmation first since it's destructive (deletes
+  // the stored credential and attempts to revoke access with Meta
+  // itself), matching the established rule that destructive actions
+  // confirm before executing rather than being one accidental click away.
+  async function handleDisconnect() {
+    if (!account) return;
+    if (!window.confirm(`Disconnect ${connector.displayName}? This removes Smarkin's access and stops all syncing. You can reconnect anytime.`)) {
+      return;
+    }
+    setDisconnecting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/v1/connectors/accounts/${account.platformAccountId}/disconnect`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Failed to disconnect (${res.status})`);
+      }
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to disconnect unexpectedly.");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
   return (
     <div className="rounded-xl border border-border bg-surface p-5 flex flex-col gap-2">
       <div className="flex items-center justify-between gap-4">
@@ -113,14 +141,24 @@ export function ConnectorCard({ connector, account }: { connector: ConnectorDefi
                 {connecting ? "Reconnecting…" : "Reconnect"}
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={handleTogglePause}
-                disabled={togglingPause}
-                className="text-xs font-medium text-text-secondary hover:text-text-primary border border-border rounded-lg px-3 py-1.5 hover:border-border-strong transition-colors disabled:opacity-50"
-              >
-                {togglingPause ? "…" : account.status === "paused" ? "Resume" : "Pause"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTogglePause}
+                  disabled={togglingPause}
+                  className="text-xs font-medium text-text-secondary hover:text-text-primary border border-border rounded-lg px-3 py-1.5 hover:border-border-strong transition-colors disabled:opacity-50"
+                >
+                  {togglingPause ? "…" : account.status === "paused" ? "Resume" : "Pause"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  disabled={disconnecting}
+                  className="text-xs font-medium text-text-muted hover:text-destructive transition-colors disabled:opacity-50"
+                >
+                  {disconnecting ? "…" : "Disconnect"}
+                </button>
+              </div>
             )
           ) : connector.available ? (
             <button
