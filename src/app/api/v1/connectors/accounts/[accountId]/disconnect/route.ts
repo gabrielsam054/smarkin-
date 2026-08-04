@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth/requireUser";
+import { buildServiceRoleClient } from "@/lib/supabase/serviceClient";
 import { decryptToken } from "@/lib/crypto/tokenEncryption";
 
 const GRAPH_API_VERSION = "v21.0";
@@ -15,10 +16,26 @@ const GRAPH_API_VERSION = "v21.0";
  * marking it unused — an explicit disconnect should mean the
  * credential is actually gone), and marks the account revoked so it
  * stops appearing as active and stops being synced.
+ *
+ * Fix, second pass: the first version used requireUser()'s regular
+ * user-session client for the UPDATE/DELETE below — but
+ * platform_accounts/oauth_tokens are service-role-only writes by RLS
+ * design (the exact same class of bug already found once in the OAuth
+ * callback route). That mistake here meant the disconnect silently
+ * no-op'd: zero rows affected, no error thrown, so the UI showed no
+ * error and nothing actually changed — exactly the symptom reported.
+ * requireUser() now handles auth only; every table operation below
+ * uses the service-role client, matching the callback route's already-
+ * corrected pattern.
  */
 export async function POST(request: NextRequest, { params }: { params: Promise<{ accountId: string }> }) {
   const { accountId } = await params;
-  const { user, supabase } = await requireUser("/integrations");
+  const { user } = await requireUser("/integrations");
+
+  const supabase = buildServiceRoleClient();
+  if (!supabase) {
+    return NextResponse.json({ error: "Service temporarily unavailable" }, { status: 503 });
+  }
 
   // Ownership check before doing anything destructive — never trust
   // the accountId alone.
@@ -66,7 +83,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   // Delete the stored credential entirely — an explicit disconnect
   // should mean the token is actually gone, not just unused.
-  await supabase.from("oauth_tokens").delete().eq("platform_account_id", accountId);
+  const { error: deleteError } = await supabase.from("oauth_tokens").delete().eq("platform_account_id", accountId);
+  if (deleteError) {
+    console.error(`[disconnect] failed to delete oauth_tokens for ${accountId}:`, deleteError.message);
+  }
 
   const { error: updateError } = await supabase
     .from("platform_accounts")
@@ -74,6 +94,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .eq("id", accountId);
 
   if (updateError) {
+    console.error(`[disconnect] failed to update platform_accounts status for ${accountId}:`, updateError.message);
     return NextResponse.json({ error: "Failed to disconnect" }, { status: 500 });
   }
 
