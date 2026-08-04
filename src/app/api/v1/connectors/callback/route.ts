@@ -139,6 +139,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(integrationsUrl);
     }
 
+    // The actual fix for a real product gap: without this, a user
+    // connecting an account would wait up to a full day (Hobby-tier
+    // cron cadence) before seeing any data at all. Awaited directly —
+    // not fire-and-forget — so the redirect only completes once real
+    // data has had a chance to land; worst case (Meta briefly slow)
+    // the job is already safely queued and the next cron tick retries
+    // it, so this can't make the connect flow itself fail.
+    const { attemptImmediateSync } = await import("@/lib/connectors/sync/queue");
+    await attemptImmediateSync({ id: result.syncJobId, platformAccountId: result.platformAccountId, jobClass: "backfill" });
+
     integrationsUrl.searchParams.set("connected", connectorKey);
     return NextResponse.redirect(integrationsUrl);
   } catch (err) {

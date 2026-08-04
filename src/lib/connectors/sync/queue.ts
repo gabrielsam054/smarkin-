@@ -200,3 +200,52 @@ export async function enqueueNextIncrementalJob(platformAccountId: string): Prom
     console.error(`[sync] failed to enqueue next incremental job for ${platformAccountId}:`, error.message);
   }
 }
+
+/**
+ * Closes a real product gap: without this, connecting an account only
+ * queued a job for the next scheduled cron tick — on the Hobby-tier
+ * once-daily schedule, that's up to a full day before a user sees any
+ * data from an account they just connected. This attempts that first
+ * sync immediately, right in the connect flow, so the very first
+ * impression is fast; every sync after this one still follows the
+ * normal daily cadence via enqueueNextIncrementalJob.
+ *
+ * Deliberately does NOT throw on failure — if Meta's API is briefly
+ * unavailable or slow right at this moment, the job is already safely
+ * queued and the next cron tick will retry it normally. This is a
+ * best-effort acceleration, not a new failure mode for the connect flow
+ * to depend on.
+ */
+export async function attemptImmediateSync(job: { id: number; platformAccountId: string; jobClass: "incremental" | "backfill" }): Promise<void> {
+  const supabase = buildServiceRoleClient();
+  if (!supabase) {
+    console.error("[sync] buildServiceRoleClient() returned null — skipping immediate sync attempt, job remains queued for the next cron tick.");
+    return;
+  }
+
+  // Mark running the same way claimSyncJobs does, so this job is
+  // indistinguishable from a normally-claimed one to every downstream
+  // function (circuit breaker, health tracking, the reaper).
+  await supabase.from("sync_jobs").update({ status: "running", started_at: new Date().toISOString(), attempts: 1 }).eq("id", job.id);
+
+  try {
+    // Dynamic import, deliberately: metaSync.ts imports SyncJob (a type)
+    // from this file, so a static top-level import of metaSync.ts here
+    // would create a genuine circular dependency — type-only circular
+    // imports are usually harmless since types erase at compile time,
+    // but this needs the actual function value, which is the fragile
+    // case (module-initialization-order dependent). The dynamic import
+    // resolves this cleanly since it only executes after both modules
+    // have finished loading.
+    const { syncMetaCampaignInsights } = await import("./metaSync");
+    await syncMetaCampaignInsights({ id: job.id, platformAccountId: job.platformAccountId, jobClass: job.jobClass, status: "running", attempts: 1 });
+    await markJobSucceeded(job.id);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown immediate-sync error";
+    console.error(`[sync] immediate sync attempt failed for job ${job.id}, leaving it queued for the next cron tick:`, message);
+    // attempts=1 here (not job.attempts, since this path bypassed the
+    // normal claim increment) — deliberately conservative so a failed
+    // immediate attempt doesn't eat into the job's real retry budget.
+    await markJobFailed(job.id, message, 1);
+  }
+}

@@ -84,6 +84,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.redirect(integrationsUrl);
     }
 
+    // Same fix as the direct single-account path — a user who had to
+    // pick from multiple accounts deserves the same fast first-sync
+    // experience, not a second-class wait just because they went
+    // through the picker.
+    const { attemptImmediateSync } = await import("@/lib/connectors/sync/queue");
+    await attemptImmediateSync({ id: result.syncJobId, platformAccountId: result.platformAccountId, jobClass: "backfill" });
+
     integrationsUrl.searchParams.set("connected", pending.connectorKey);
     return NextResponse.redirect(integrationsUrl);
   } catch (err) {

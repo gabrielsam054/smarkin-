@@ -5,7 +5,7 @@ import type { OAuthTokenSet } from "@/lib/connectors/types";
 export interface AccountToConnect { externalId: string; displayName: string }
 
 export type CompleteConnectionResult =
-  | { ok: true; connectorKey: string }
+  | { ok: true; connectorKey: string; platformAccountId: string; syncJobId: number }
   | { ok: false; errorCode: "backend_not_ready" | "token_store_failed" | "connected_but_sync_not_queued" };
 
 /**
@@ -79,16 +79,16 @@ export async function completeConnection(params: {
     if (error) console.error(`[completeConnection] failed to reset connector_health for ${upsertedAccount.id}:`, error.message);
   });
 
-  const { error: jobError } = await supabase.from("sync_jobs").insert({
+  const { data: insertedJob, error: jobError } = await supabase.from("sync_jobs").insert({
     platform_account_id: upsertedAccount.id,
     job_class: "backfill",
     status: "queued",
-  });
+  }).select("id").single();
 
-  if (jobError) {
-    console.error(`[completeConnection] sync_jobs insert failed for platform_account ${upsertedAccount.id}:`, jobError.message, jobError.details ?? "", jobError.hint ?? "");
+  if (jobError || !insertedJob) {
+    console.error(`[completeConnection] sync_jobs insert failed for platform_account ${upsertedAccount.id}:`, jobError?.message ?? "no row returned", jobError?.details ?? "", jobError?.hint ?? "");
     return { ok: false, errorCode: "connected_but_sync_not_queued" };
   }
 
-  return { ok: true, connectorKey };
+  return { ok: true, connectorKey, platformAccountId: upsertedAccount.id, syncJobId: insertedJob.id };
 }
