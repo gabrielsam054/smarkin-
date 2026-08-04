@@ -51,17 +51,33 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     throw new Error("buildServiceRoleClient() returned null — service-role credentials are not configured.");
   }
 
+  // Two simple, independent queries instead of PostgREST's embedded-
+  // relationship syntax (oauth_tokens(...) nested in the select) —
+  // that syntax depends on PostgREST's schema cache correctly
+  // recognizing the FK relationship, which has now been unreliable
+  // twice in this same session (claim_sync_jobs and this) after DDL
+  // run directly via the SQL Editor. Two plain queries have no such
+  // dependency and can't silently return null for a row that
+  // genuinely exists.
   const { data: account, error: accountError } = await supabase
     .from("platform_accounts")
-    .select("id, workspace_id, external_account_id, oauth_tokens(enc_access_token, expires_at)")
+    .select("id, workspace_id, external_account_id")
     .eq("id", job.platformAccountId)
     .single();
 
   if (accountError || !account) {
-    throw new Error(`platform_account ${job.platformAccountId} not found or oauth_tokens missing`);
+    throw new Error(`platform_account ${job.platformAccountId} not found`);
   }
 
-  const tokenRow = (account as unknown as { oauth_tokens: { enc_access_token: string; expires_at: string | null } | null }).oauth_tokens;
+  const { data: tokenRow, error: tokenLookupError } = await supabase
+    .from("oauth_tokens")
+    .select("enc_access_token, expires_at")
+    .eq("platform_account_id", job.platformAccountId)
+    .maybeSingle();
+
+  if (tokenLookupError) {
+    throw new Error(`Failed looking up oauth_tokens for platform_account ${job.platformAccountId}: ${tokenLookupError.message}`);
+  }
   if (!tokenRow?.enc_access_token) {
     throw new Error(`No stored token for platform_account ${job.platformAccountId}`);
   }
