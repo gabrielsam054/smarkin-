@@ -30,6 +30,19 @@ export async function completeConnection(params: {
   const encAccessToken = encryptToken(tokens.accessToken);
   const encRefreshToken = tokens.refreshToken ? encryptToken(tokens.refreshToken) : null;
 
+  // The actual root cause of "Unsupported state or unable to
+  // authenticate data" on every decrypt attempt: encryptToken()
+  // returns a raw Node Buffer, which was being passed directly into
+  // Supabase's .upsert() call. When the JS client JSON-serializes that
+  // for the HTTP request, a raw Buffer becomes
+  // {"type":"Buffer","data":[...]} — not the "\x"-prefixed hex string
+  // Postgres's bytea column actually expects — silently corrupting
+  // what gets stored. The read side (metaSync.ts) already correctly
+  // expected "\x"-prefixed hex; the write side never actually produced
+  // it. Converting explicitly here closes that gap.
+  const encAccessTokenHex = "\\x" + encAccessToken.toString("hex");
+  const encRefreshTokenHex = encRefreshToken ? "\\x" + encRefreshToken.toString("hex") : null;
+
   // Upsert on the real unique constraint — same row, same id on a
   // reconnect, so oauth_tokens' existing reference stays valid rather
   // than erroring or duplicating.
@@ -54,8 +67,8 @@ export async function completeConnection(params: {
 
   const { error: tokenError } = await supabase.from("oauth_tokens").upsert({
     platform_account_id: upsertedAccount.id,
-    enc_access_token: encAccessToken,
-    enc_refresh_token: encRefreshToken,
+    enc_access_token: encAccessTokenHex,
+    enc_refresh_token: encRefreshTokenHex,
     key_version: 1,
     expires_at: tokens.expiresAt,
     scopes: tokens.scopes,

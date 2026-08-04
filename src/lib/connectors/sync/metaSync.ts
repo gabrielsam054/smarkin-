@@ -87,7 +87,10 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
       const { error: updateError } = await supabase
         .from("oauth_tokens")
         .update({
-          enc_access_token: encryptToken(refreshed.accessToken),
+          // Same fix as completeConnection.ts: convert to the "\x"-
+          // prefixed hex string Postgres's bytea column actually
+          // expects, not a raw Buffer that JSON-serializes incorrectly.
+          enc_access_token: "\\x" + encryptToken(refreshed.accessToken).toString("hex"),
           expires_at: refreshed.expiresAt,
         })
         .eq("platform_account_id", job.platformAccountId);
