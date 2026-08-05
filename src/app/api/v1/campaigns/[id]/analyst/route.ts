@@ -22,7 +22,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Ownership enforced inside buildCampaignAnalystContext itself (the
   // query is scoped to workspaceId) — returns null rather than another
   // workspace's data if the id doesn't belong to this user.
-  const context = await buildCampaignAnalystContext(supabase, workspaceId, id);
+  const context = await buildCampaignAnalystContext(supabase, user.id, workspaceId, id);
   if (!context) {
     return NextResponse.json({ error: "Campaign not found." }, { status: 404 });
   }

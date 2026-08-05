@@ -12,6 +12,7 @@ export interface CampaignAnalystContext {
   openOpportunities: Array<{ title: string; evidence: Record<string, unknown>; confidence: string; type: string }>;
   audienceSegments: Array<{ ageRange: string; gender: string; ctr: number }>;
   placementSegments: Array<{ publisherPlatform: string; platformPosition: string; device: string; ctr: number }>;
+  pastDecisionOutcomes: Array<{ recommendedChannel: string | null; outcome: string; notes: string | null }>;
   dataAvailability: { hasReach: boolean; hasFrequency: boolean; hasBudget: boolean; hasAudienceData: boolean; hasPlacementData: boolean; daysOfDailyHistory: number };
 }
 
@@ -27,12 +28,13 @@ export interface CampaignAnalystContext {
  */
 export async function buildCampaignAnalystContext(
   supabase: SupabaseClient,
+  userId: string,
   workspaceId: string,
   campaignEntityId: string
 ): Promise<CampaignAnalystContext | null> {
   const { data: campaign } = await supabase
     .from("campaign_entities")
-    .select("external_id, name, objective, daily_budget, lifetime_budget")
+    .select("external_id, name, objective, daily_budget, lifetime_budget, platform_account_id")
     .eq("id", campaignEntityId).eq("workspace_id", workspaceId).single();
 
   if (!campaign) return null;
@@ -86,6 +88,48 @@ export async function buildCampaignAnalystContext(
     .eq("workspace_id", workspaceId).eq("entity_id", campaign.external_id).eq("metric_key", "ctr")
     .order("captured_at", { ascending: false }).limit(20);
 
+  // Real decision-outcome memory — traces the same business->account
+  // link chain already proven for Knowledge Graph (never a new
+  // relationship system): this campaign's platform_account_id ->
+  // whichever business_intelligence_profiles row is explicitly linked
+  // to it -> that business's product_name -> decisions made about that
+  // same product -> real reported outcomes on those decisions. Only
+  // ever the outcomes for the SAME underlying business this campaign
+  // actually belongs to, never another workspace's or another
+  // business's history.
+  let pastDecisionOutcomes: CampaignAnalystContext["pastDecisionOutcomes"] = [];
+  const { data: linkedProfile } = await supabase
+    .from("business_intelligence_profiles")
+    .select("product_name")
+    .eq("linked_platform_account_id", campaign.platform_account_id)
+    .maybeSingle();
+
+  if (linkedProfile?.product_name) {
+    const { data: relatedRequests } = await supabase
+      .from("decision_requests").select("id")
+      .eq("user_id", userId)
+      .eq("product_name", linkedProfile.product_name);
+
+    const requestIds = (relatedRequests ?? []).map((r) => r.id);
+    if (requestIds.length > 0) {
+      const { data: relatedResults } = await supabase
+        .from("decision_results").select("id, recommended_channel")
+        .in("request_id", requestIds);
+
+      const resultIds = (relatedResults ?? []).map((r) => r.id);
+      if (resultIds.length > 0) {
+        const { data: outcomeRows } = await supabase
+          .from("decision_outcomes").select("decision_result_id, outcome, notes")
+          .in("decision_result_id", resultIds);
+
+        pastDecisionOutcomes = (outcomeRows ?? []).map((o) => ({
+          recommendedChannel: (relatedResults ?? []).find((r) => r.id === o.decision_result_id)?.recommended_channel ?? null,
+          outcome: o.outcome, notes: o.notes,
+        }));
+      }
+    }
+  }
+
   const uniqueDays = new Set((dailySnapshots ?? []).map((s) => s.captured_at.slice(0, 10)));
 
   return {
@@ -103,6 +147,7 @@ export async function buildCampaignAnalystContext(
     placementSegments: (placementRows ?? []).map((p) => ({
       publisherPlatform: p.publisher_platform, platformPosition: p.platform_position, device: p.impression_device, ctr: p.value,
     })),
+    pastDecisionOutcomes,
     dataAvailability: {
       hasReach: "reach" in latestMetrics, hasFrequency: "frequency" in latestMetrics,
       hasBudget: campaign.daily_budget !== null || campaign.lifetime_budget !== null,

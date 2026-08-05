@@ -58,6 +58,9 @@ Audience segments (age/gender CTR, if any): ${JSON.stringify(context.audienceSeg
 
 Placement/device segments (publisher platform, position, device CTR, if any): ${JSON.stringify(context.placementSegments)}
 
+Past decisions made about this same business, with their real reported outcomes (if any): ${JSON.stringify(context.pastDecisionOutcomes)}
+${context.pastDecisionOutcomes.length > 0 ? "If relevant to the question, reference this real history explicitly — e.g. \"last time a similar recommendation was made, the reported outcome was X.\" Never claim history exists if this array is empty." : ""}
+
 DATA AVAILABILITY — explicitly note these gaps in your limitations when relevant:
 - Reach data: ${context.dataAvailability.hasReach ? "available" : "NOT available"}
 - Frequency data: ${context.dataAvailability.hasFrequency ? "available" : "NOT available"}
