@@ -204,7 +204,19 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           </div>
         )}
 
-        <CampaignAnalyst campaignId={campaign.id} />
+        <CampaignAnalyst
+          campaignId={campaign.id}
+          exportData={{
+            campaignName: campaign.name,
+            healthScore: health.healthScore,
+            metrics: {
+              impressions: latestByMetric.get("impressions") ?? null, clicks: latestByMetric.get("clicks") ?? null,
+              spend: latestByMetric.get("spend") ?? null, ctr: latestByMetric.get("ctr") ?? null,
+              conversions: latestByMetric.get("conversions") ?? null,
+            },
+            opportunities: opportunities.map((o) => ({ title: o.title, confidence: o.confidence, evidence: o.evidence as Record<string, unknown> })),
+          }}
+        />
       </div>
     </AppShell>
   );

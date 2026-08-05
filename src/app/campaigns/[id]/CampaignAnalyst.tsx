@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, Loader2, AlertTriangle, ListChecks, HelpCircle } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, ListChecks, HelpCircle, Download } from "lucide-react";
 import { SUGGESTED_QUESTIONS } from "@/lib/campaignAnalyst/prompt";
 
 interface AnalystResponse {
@@ -13,6 +13,13 @@ interface AnalystResponse {
   suggestedFollowUps: string[];
 }
 
+export interface ExportableCampaignData {
+  campaignName: string;
+  healthScore: number | null;
+  metrics: Record<string, number | null>;
+  opportunities: Array<{ title: string; confidence: string; evidence: Record<string, unknown> }>;
+}
+
 /**
  * Deliberately not built as an open-ended chat box with empty
  * placeholder text — suggested questions are the primary entry point,
@@ -21,11 +28,61 @@ interface AnalystResponse {
  * evidence, reasoning, recommendations, limitations) — never just the
  * headline claim with the supporting structure hidden or omitted.
  */
-export function CampaignAnalyst({ campaignId }: { campaignId: string }) {
+export function CampaignAnalyst({ campaignId, exportData }: { campaignId: string; exportData: ExportableCampaignData }) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<AnalystResponse | null>(null);
+
+  // Real client-side export — no PDF library added to the app, no
+  // server round-trip needed. Includes the actual data already on the
+  // page (health, metrics, real opportunities), plus the last analyst
+  // response if one was asked, since that's real, evidence-backed
+  // content worth taking along, not just raw numbers.
+  function exportReport() {
+    const lines: string[] = [
+      `# ${exportData.campaignName}`,
+      "",
+      `Health score: ${exportData.healthScore ?? "insufficient data"}`,
+      "",
+      "## Metrics",
+      ...Object.entries(exportData.metrics).map(([k, v]) => `- ${k}: ${v ?? "—"}`),
+      "",
+      "## Open Opportunities",
+      ...(exportData.opportunities.length === 0
+        ? ["None currently flagged."]
+        : exportData.opportunities.map((o) => `- **${o.title}** (${o.confidence} confidence) — ${Object.entries(o.evidence).map(([k, v]) => `${k}: ${v}`).join(", ")}`)),
+    ];
+
+    if (response) {
+      lines.push(
+        "",
+        "## Campaign Analyst — Last Question",
+        "",
+        `**Answer:** ${response.executiveAnswer}`,
+        "",
+        "**Evidence:** " + response.evidence.map((e) => `${e.metric}: ${e.value}`).join(", "),
+        "",
+        `**Reasoning:** ${response.reasoning}`,
+        "",
+        "**Recommendations:**",
+        ...response.recommendations.map((r) => `- ${r.action} (${r.confidence} confidence) — ${r.evidence}`),
+        "",
+        "**Limitations:**",
+        ...response.limitations.map((l) => `- ${l}`),
+      );
+    }
+
+    lines.push("", `_Exported ${new Date().toLocaleString()} — every number above is real, synced data. Nothing here is estimated or fabricated._`);
+
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${exportData.campaignName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}-report.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function ask(q: string) {
     setLoading(true);
@@ -50,10 +107,17 @@ export function CampaignAnalyst({ campaignId }: { campaignId: string }) {
 
   return (
     <div>
-      <h2 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-1.5">
-        <Sparkles size={14} className="text-text-muted" />
-        Ask the Campaign Analyst
-      </h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-text-primary flex items-center gap-1.5">
+          <Sparkles size={14} className="text-text-muted" />
+          Ask the Campaign Analyst
+        </h2>
+        <button type="button" onClick={exportReport}
+          className="text-xs font-medium text-text-secondary hover:text-text-primary flex items-center gap-1 border border-border rounded-lg px-2.5 py-1.5 hover:border-border-strong transition-colors">
+          <Download size={12} />
+          Export
+        </button>
+      </div>
 
       {!response && !loading && (
         <div className="flex flex-wrap gap-2 mb-3">
