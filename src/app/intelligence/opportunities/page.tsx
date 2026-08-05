@@ -87,8 +87,11 @@ export default async function OpportunitiesPage() {
                         </span>
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted font-mono mt-2">
-                        {Object.entries(o.evidence).filter(([k]) => k !== "campaign_name").map(([key, value]) => (
-                          <span key={key}>{key.replace(/_/g, " ")}: {String(value)}</span>
+                        {Object.entries(o.evidence).filter(([k]) => k !== "campaign_name").map(([key, value], i, arr) => (
+                          <span key={key}>
+                            {key.replace(/_/g, " ")}: {typeof value === "number" ? value.toFixed(2) : String(value)}
+                            {i < arr.length - 1 && <span className="text-border-strong mx-1">·</span>}
+                          </span>
                         ))}
                       </div>
                     </div>
