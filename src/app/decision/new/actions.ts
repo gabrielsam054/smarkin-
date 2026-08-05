@@ -47,6 +47,12 @@ export async function createDecisionRequest(
     .from("decision_requests")
     .insert({
       user_id: user.id,
+      // Closes a real gap: product_name was computed and used for the
+      // reasoning call below but never actually saved to this table —
+      // meaning there was no way to connect a decision back to its
+      // business_intelligence_profiles row afterward, and therefore no
+      // way to show real linked campaign data on the decision.
+      product_name: productName,
       industry,
       business_model: businessModel || "B2C",
       product_type: String(formData.get("productType") ?? "") || null,

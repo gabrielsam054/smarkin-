@@ -2,12 +2,14 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import {
-  ArrowLeft, CheckCircle2, Sparkles, Target, Layers, AlertTriangle, Loader2,
+  ArrowLeft, CheckCircle2, Sparkles, Target, Layers, AlertTriangle, Loader2, TrendingUp,
 } from "lucide-react";
 import { ReportSection } from "@/components/shared/ReportSection";
 import { OutcomeReporter } from "./OutcomeReporter";
 import { isCurrentUserAdmin } from "@/lib/admin";
 import { AppShell } from "@/components/layout/AppShell";
+import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
+import { resolveLatestMetrics } from "@/lib/connectors/resolveLatestMetrics";
 
 interface ChannelScore { channel: string; score: number }
 
@@ -41,6 +43,47 @@ export default async function DecisionReportPage({ params }: { params: Promise<{
   const { data: outcome } = result
     ? await supabase.from("decision_outcomes").select("outcome").eq("decision_result_id", result.id).maybeSingle()
     : { data: null };
+
+  // Real performance data, only when this decision's business is
+  // explicitly linked to a connected account — reusing the exact same
+  // link Marketing Brain already lets you set (both read from
+  // business_intelligence_profiles.linked_platform_account_id, keyed
+  // by the same user_id + product_name pair). Never inferred here
+  // either; if there's no link, this section simply doesn't render.
+  let linkedPerformance: { spend: number | null; impressions: number | null; campaignCount: number; accountName: string } | null = null;
+  if (request.product_name) {
+    const { data: biProfile } = await supabase
+      .from("business_intelligence_profiles")
+      .select("linked_platform_account_id")
+      .eq("user_id", user.id)
+      .eq("product_name", request.product_name)
+      .maybeSingle();
+
+    if (biProfile?.linked_platform_account_id) {
+      const workspaceId = await resolveWorkspaceId(user.id, supabase);
+      const { data: accountRow } = await supabase
+        .from("platform_accounts").select("display_name, external_id")
+        .eq("id", biProfile.linked_platform_account_id).maybeSingle();
+
+      const { data: campaignRows } = await supabase
+        .from("campaign_entities").select("id, external_id, name, synced_at")
+        .eq("platform_account_id", biProfile.linked_platform_account_id);
+      const externalIds = (campaignRows ?? []).map((c) => c.external_id);
+      const { data: snapshotRows } = workspaceId && externalIds.length > 0
+        ? await supabase.from("metric_snapshots").select("entity_id, metric_key, value, captured_at")
+            .eq("workspace_id", workspaceId).in("entity_id", externalIds)
+            .gte("captured_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+        : { data: null };
+
+      const resolved = resolveLatestMetrics(campaignRows ?? [], snapshotRows ?? []);
+      linkedPerformance = {
+        spend: resolved.some((c) => c.metrics.spend !== null) ? resolved.reduce((s, c) => s + (c.metrics.spend ?? 0), 0) : null,
+        impressions: resolved.some((c) => c.metrics.impressions !== null) ? resolved.reduce((s, c) => s + (c.metrics.impressions ?? 0), 0) : null,
+        campaignCount: resolved.length,
+        accountName: accountRow?.display_name || accountRow?.external_id || "Connected account",
+      };
+    }
+  }
 
   if (!result && request.status === "processing") {
     return (
@@ -102,6 +145,24 @@ export default async function DecisionReportPage({ params }: { params: Promise<{
           <p className="text-xs font-mono uppercase tracking-wider text-text-muted">Marketing Decision</p>
           <h1 className="text-lg font-bold text-text-primary truncate">{request.industry}</h1>
         </div>
+
+        {/* Real performance, only when this decision's business is
+            explicitly linked to a connected account (set on the
+            Marketing Brain page, reused here) — never shown as a
+            guess, never inferred from the industry/product text alone. */}
+        {linkedPerformance && (
+          <div className="card p-4 flex items-center gap-5">
+            <TrendingUp size={16} className="text-primary flex-none" />
+            <div className="flex items-center gap-5 flex-1 text-xs text-text-secondary">
+              <span><span className="font-semibold text-text-primary">{linkedPerformance.campaignCount}</span> campaigns</span>
+              <span><span className="font-semibold text-text-primary">
+                {linkedPerformance.spend === null ? "—" : `$${linkedPerformance.spend.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </span> spend (7d)</span>
+              <span className="text-text-muted">from {linkedPerformance.accountName}</span>
+            </div>
+            <Link href="/campaigns" className="text-xs font-medium text-primary hover:underline flex-none">View campaigns →</Link>
+          </div>
+        )}
 
         {/* ── THE ONE RECOMMENDATION — deliberately the most prominent thing
              on the page, never buried in a collapsible section. "Select ONE
