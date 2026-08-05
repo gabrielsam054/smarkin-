@@ -1,0 +1,77 @@
+import { CampaignAnalystContext } from "./buildContext";
+
+export interface AnalystResponse {
+  executiveAnswer: string;
+  evidence: Array<{ metric: string; value: string }>;
+  reasoning: string;
+  recommendations: Array<{ action: string; expectedBenefit: string; confidence: "high" | "medium" | "low"; evidence: string }>;
+  limitations: string[];
+  suggestedFollowUps: string[];
+}
+
+export const ANALYST_SYSTEM_PROMPT = `You are a grounded Meta Ads campaign analyst inside Smarkin OS. You are NOT a generic chatbot.
+
+ABSOLUTE RULES — violating any of these is a failure:
+1. You may ONLY use facts explicitly present in the CAMPAIGN CONTEXT provided in the user message. Never invent, estimate, or assume any metric, trend, or fact not literally present in that context.
+2. If the context does not contain data needed to answer part of the question, you MUST say so explicitly in "limitations" — never fill the gap with a plausible-sounding guess.
+3. Every claim in "executiveAnswer" and "reasoning" must be traceable to a specific value in "evidence", and every value in "evidence" must come directly from the provided context.
+4. Every recommendation must cite the specific evidence that supports it — no recommendation without a cited number.
+5. You have no knowledge of any other campaign, workspace, or conversation — only what's in this context.
+
+Respond with ONLY valid JSON matching this exact shape, no markdown fences, no preamble:
+{
+  "executiveAnswer": "string - concise, 2-3 sentences",
+  "evidence": [{"metric": "string", "value": "string"}],
+  "reasoning": "string - how the evidence supports the executiveAnswer",
+  "recommendations": [{"action": "string", "expectedBenefit": "string", "confidence": "high|medium|low", "evidence": "string - the specific number backing this"}],
+  "limitations": ["string - what cannot be determined and why, be specific about what data is missing"],
+  "suggestedFollowUps": ["string - 2-4 related questions the user might ask next"]
+}`;
+
+/**
+ * Serializes the real, already-assembled context into the prompt.
+ * Deliberately explicit about what's present AND what's genuinely
+ * absent (dataAvailability) — the model needs to see the gaps stated
+ * plainly to correctly report them as limitations rather than silently
+ * ignoring a question it can't actually answer.
+ */
+export function buildAnalystPrompt(context: CampaignAnalystContext, question: string): string {
+  return `CAMPAIGN CONTEXT (this is the ONLY data you may use):
+
+Campaign: ${context.campaignName}
+Objective: ${context.objective ?? "not synced"}
+Daily budget: ${context.dailyBudget ?? "not set"}
+Lifetime budget: ${context.lifetimeBudget ?? "not set"}
+
+Latest metrics: ${JSON.stringify(context.latestMetrics)}
+Health score: ${context.health.healthScore ?? "insufficient data"}
+CTR trend: ${context.health.ctr.direction}${context.health.ctr.changePercent !== null ? ` (${context.health.ctr.changePercent}%)` : ""}
+CPC trend: ${context.health.cpc.direction}
+CPM trend: ${context.health.cpm.direction}
+
+Account averages (across all your campaigns, last 7 days): CTR ${context.accountAverages.ctr?.toFixed(2) ?? "unavailable"}, spend ${context.accountAverages.spend?.toFixed(2) ?? "unavailable"}
+
+Open opportunities already detected for this campaign: ${JSON.stringify(context.openOpportunities)}
+
+Audience segments (age/gender CTR, if any): ${JSON.stringify(context.audienceSegments)}
+
+DATA AVAILABILITY — explicitly note these gaps in your limitations when relevant:
+- Reach data: ${context.dataAvailability.hasReach ? "available" : "NOT available"}
+- Frequency data: ${context.dataAvailability.hasFrequency ? "available" : "NOT available"}
+- Budget data: ${context.dataAvailability.hasBudget ? "available" : "NOT available"}
+- Audience breakdown data: ${context.dataAvailability.hasAudienceData ? "available" : "NOT available"}
+- Days of real daily history: ${context.dataAvailability.daysOfDailyHistory}
+- Creative data (headlines, images, video): NEVER available in this system — always note if relevant
+- Conversion/ROAS data: NEVER available in this system — always note if relevant
+- Placement/device/country breakdown: NEVER available in this system — always note if relevant
+
+USER QUESTION: ${question}`;
+}
+
+export const SUGGESTED_QUESTIONS = [
+  "Why is this campaign performing the way it is?",
+  "Should I increase the budget?",
+  "What's my biggest optimization opportunity?",
+  "Explain my health score",
+  "Is this campaign ready to scale?",
+];

@@ -6,6 +6,7 @@ import { isCurrentUserAdmin } from "@/lib/admin";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
 import { computeCampaignHealth } from "@/lib/connectors/campaignHealth";
 import { AppShell } from "@/components/layout/AppShell";
+import { CampaignAnalyst } from "./CampaignAnalyst";
 
 function formatNumber(n: number | null): string {
   return n === null ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 0 });
@@ -186,6 +187,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
             </div>
           </div>
         )}
+
+        <CampaignAnalyst campaignId={campaign.id} />
       </div>
     </AppShell>
   );
