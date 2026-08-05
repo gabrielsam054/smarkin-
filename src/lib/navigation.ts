@@ -62,7 +62,7 @@ export const NAVIGATION: NavGroup[] = [
       { label: "Opportunities", href: "/intelligence/opportunities", icon: ListChecks, status: "live" },
       { label: "Patterns", href: "/intelligence/patterns", icon: Fingerprint, status: "reserved" },
       { label: "Memory", href: "/intelligence/memory", icon: BookOpen, status: "live" },
-      { label: "Knowledge Graph", href: "/intelligence/graph", icon: Share2, status: "reserved" },
+      { label: "Knowledge Graph", href: "/intelligence/graph", icon: Share2, status: "live" },
     ],
   },
   {
