@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { runSmarkinBrain, SmarkinRequest, BrainRequest } from "@/lib/smarkinBrain";
 import { log } from "@/lib/brain/diagnostics/logger";
 import { authProvider } from "@/lib/security/authProvider";
+import { adjustConfidenceFromOutcomes } from "@/lib/decisionOutcomeLearning";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // This is the real entry point for the four-module chain built over the last
@@ -114,6 +115,17 @@ export async function createDecisionRequest(
     return { error: "Something went wrong generating your recommendation. Please try again." };
   }
 
+  // The learning loop the pre-existing decision_outcomes code flagged as
+  // deliberate future work in its own comments — applied here, after
+  // the engine's real base score, using genuine historical outcomes for
+  // this exact archetype+channel combination. Conservative by design:
+  // requires real sample volume before adjusting at all, and even then
+  // blends rather than overrides the engine's own signal.
+  const archetypeId = result.decision.matchedArchetype?.ruleId ?? null;
+  const outcomeAdjusted = await adjustConfidenceFromOutcomes(
+    supabase, archetypeId, result.decision.recommendedChannel, result.decision.channelConfidenceScore
+  );
+
   // ── Save the result — every layer's gaps preserved, nothing silently dropped ──
   const { error: resultError } = await supabase.from("decision_results").insert({
     request_id: request.id,
@@ -127,7 +139,7 @@ export async function createDecisionRequest(
     third_channel: result.decision.thirdChannel,
     channel_reasoning: result.decision.channelReasoning,
     channel_evidence: result.decision.channelEvidence,
-    channel_confidence: result.decision.channelConfidence,
+    channel_confidence: outcomeAdjusted.shortLabel,
     primary_recommendation: result.decision.primaryRecommendation,
     alternative_actions: result.decision.alternativeActions,
     critical_opportunities: result.decision.criticalOpportunities,
