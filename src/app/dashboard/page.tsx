@@ -88,6 +88,13 @@ export default async function DashboardPage() {
   // the briefing section.
   const workspaceId = await resolveWorkspaceId(user.id, supabase);
   const briefing = workspaceId ? await buildDailyBriefing(supabase, workspaceId) : null;
+
+  // Same usability-audit fix as the Opportunities page: briefing
+  // priorities named a campaign but linked nowhere.
+  const { data: briefingCampaignRows } = workspaceId
+    ? await supabase.from("campaign_entities").select("id, external_id").eq("workspace_id", workspaceId)
+    : { data: null };
+  const campaignIdByExternalId = new Map<string, string>((briefingCampaignRows ?? []).map((c) => [c.external_id, c.id]));
   const hasAccess      = subscription?.status === "active";
   const usedThisPeriod = usageRow?.analyses ?? 0;
   const LIMITS: Record<string, number | null> = { trial: 20, pro: null, agency: null };
@@ -153,11 +160,15 @@ export default async function DashboardPage() {
             </p>
             {briefing.topPriorities.length > 0 && (
               <div className="flex flex-col gap-1.5">
-                {briefing.topPriorities.map((p, i) => (
-                  <p key={i} className="text-xs text-text-secondary">
-                    <span className="text-text-muted font-mono">{i + 1}.</span> {p.title}
-                  </p>
-                ))}
+                {briefing.topPriorities.map((p, i) => {
+                  const campaignId = campaignIdByExternalId.get(p.campaignExternalId);
+                  const content = <><span className="text-text-muted font-mono">{i + 1}.</span> {p.title}</>;
+                  return campaignId ? (
+                    <Link key={i} href={`/campaigns/${campaignId}`} className="text-xs text-text-secondary hover:text-text-primary transition-colors">{content}</Link>
+                  ) : (
+                    <p key={i} className="text-xs text-text-secondary">{content}</p>
+                  );
+                })}
               </div>
             )}
             <Link href="/intelligence/opportunities" className="text-xs font-medium text-primary hover:underline mt-3 inline-block">View all opportunities →</Link>

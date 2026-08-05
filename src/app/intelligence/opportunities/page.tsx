@@ -13,6 +13,7 @@ interface OpportunityRow {
   evidence: Record<string, number | string>;
   confidence: "low" | "medium" | "high";
   created_at: string;
+  related_campaign_external_id: string;
 }
 
 const CONFIDENCE_RANK = { high: 0, medium: 1, low: 2 };
@@ -44,12 +45,21 @@ export default async function OpportunitiesPage() {
 
   const workspaceId = await resolveWorkspaceId(user.id, supabase);
   const { data: rows } = workspaceId
-    ? await supabase.from("opportunities").select("id, opportunity_type, title, evidence, confidence, created_at")
+    ? await supabase.from("opportunities").select("id, opportunity_type, title, evidence, confidence, created_at, related_campaign_external_id")
         .eq("workspace_id", workspaceId).eq("status", "open")
     : { data: null };
 
   const opportunities = ((rows ?? []) as unknown as OpportunityRow[])
     .sort((a, b) => CONFIDENCE_RANK[a.confidence] - CONFIDENCE_RANK[b.confidence] || b.created_at.localeCompare(a.created_at));
+
+  // Real fix from the usability audit: opportunities named a campaign
+  // but linked nowhere. This map converts the external Meta campaign
+  // id (what opportunities store) to the internal campaign_entities id
+  // (what the detail page route actually needs).
+  const { data: campaignRows } = workspaceId
+    ? await supabase.from("campaign_entities").select("id, external_id").eq("workspace_id", workspaceId)
+    : { data: null };
+  const campaignIdByExternalId = new Map<string, string>((campaignRows ?? []).map((c) => [c.external_id, c.id]));
 
   return (
     <AppShell firstName={firstName} initials={firstName.charAt(0).toUpperCase()} isAdmin={!!isAdmin} activeLabel="Opportunities">
@@ -75,7 +85,8 @@ export default async function OpportunitiesPage() {
             {opportunities.map((o) => {
               const Icon = TYPE_ICON[o.opportunity_type] ?? ListChecks;
               return (
-                <div key={o.id} className="card p-4">
+                <Link href={campaignIdByExternalId.get(o.related_campaign_external_id) ? `/campaigns/${campaignIdByExternalId.get(o.related_campaign_external_id)}` : "#"}
+                  key={o.id} className="card p-4 block hover:border-border-strong transition-colors">
                   <div className="flex items-start gap-3">
                     <div className="w-8 h-8 rounded-lg bg-surface-2 border border-border flex items-center justify-center flex-none">
                       <Icon size={14} className="text-text-muted" />
@@ -98,9 +109,11 @@ export default async function OpportunitiesPage() {
                         ))}
                       </div>
                     </div>
-                    <DismissButton opportunityId={o.id} />
+                    <div onClick={(e) => e.preventDefault()}>
+                      <DismissButton opportunityId={o.id} />
+                    </div>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>
