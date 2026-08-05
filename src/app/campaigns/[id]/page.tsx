@@ -117,7 +117,18 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
             attempted and came back empty, since that would misleadingly
             imply Smarkin tried to fetch them. */}
         <div className="card p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div><p className="text-xs text-text-muted mb-1">Health score</p><p className="text-lg font-semibold text-text-primary">{health.healthScore ?? "—"}</p></div>
+          <div>
+            <p className="text-xs text-text-muted mb-1">Health score</p>
+            <p className="text-lg font-semibold text-text-primary">{health.healthScore ?? "—"}</p>
+            {health.healthScore !== null && (
+              <p className="text-[10px] text-text-muted mt-0.5 leading-tight">
+                {[
+                  { label: "CTR", t: health.ctr }, { label: "CPC", t: health.cpc },
+                  { label: "CPM", t: health.cpm }, { label: "ROAS", t: health.roas },
+                ].filter((m) => m.t.direction !== "insufficient_data").map((m) => `${m.label} ${m.t.direction}`).join(", ") || "starting from neutral (50)"}
+              </p>
+            )}
+          </div>
           <div><p className="text-xs text-text-muted mb-1">Impressions</p><p className="text-lg font-semibold text-text-primary">{formatNumber(latestByMetric.get("impressions") ?? null)}</p></div>
           <div><p className="text-xs text-text-muted mb-1">Reach</p><p className="text-lg font-semibold text-text-primary">{formatNumber(latestByMetric.get("reach") ?? null)}</p></div>
           <div><p className="text-xs text-text-muted mb-1">Frequency</p><p className="text-lg font-semibold text-text-primary">{latestByMetric.get("frequency")?.toFixed(2) ?? "—"}</p></div>

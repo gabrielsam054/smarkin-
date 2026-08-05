@@ -155,7 +155,12 @@ export default async function CampaignsPage() {
                       {health?.healthScore !== null && health?.healthScore !== undefined && (
                         <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
                           health.healthScore >= 60 ? "bg-primary/10 text-primary" : health.healthScore <= 40 ? "bg-destructive/10 text-destructive" : "bg-surface-2 text-text-muted"
-                        }`} title="Real, transparent score based on genuine trend data — not a black-box AI rating">
+                        }`} title={
+                          [
+                            { label: "CTR", t: health.ctr }, { label: "CPC", t: health.cpc },
+                            { label: "CPM", t: health.cpm }, { label: "ROAS", t: health.roas },
+                          ].filter((m) => m.t.direction !== "insufficient_data").map((m) => `${m.label} ${m.t.direction}`).join(", ") || "Starting from neutral (50) — not enough trend data yet to move it"
+                        }>
                           Health {health.healthScore}
                         </span>
                       )}
