@@ -188,6 +188,12 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   const body = await res.json() as { data: Array<{ campaign_id: string; campaign_name?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }> };
 
   const capturedAt = new Date().toISOString();
+  // Tagged at write time, not reconstructed later — a backfill's
+  // aggregate row and a daily incremental row are fundamentally
+  // different kinds of data (months of history vs. one real day), and
+  // the only reliable place to know which is which is right here,
+  // where job.jobClass is unambiguous.
+  const sourceWindow = job.jobClass === "backfill" ? "backfill_aggregate" : "daily";
   const snapshots = body.data.flatMap((row) => {
     const metrics: Array<[string, string | undefined]> = [
       ["impressions", row.impressions], ["clicks", row.clicks], ["spend", row.spend], ["ctr", row.ctr],
@@ -201,6 +207,7 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
         metric_key: metricKey,
         value: Number(value),
         captured_at: capturedAt,
+        source_window: sourceWindow,
       }));
   });
 

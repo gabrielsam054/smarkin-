@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { Megaphone, Clock } from "lucide-react";
+import { Megaphone, Clock, TrendingUp, TrendingDown, Minus, HelpCircle } from "lucide-react";
 import { requireUser } from "@/lib/auth/requireUser";
 import { isCurrentUserAdmin } from "@/lib/admin";
 import { createClient } from "@/lib/supabase/server";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
 import { resolveLatestMetrics } from "@/lib/connectors/resolveLatestMetrics";
+import { computeCampaignHealth, TrendDirection } from "@/lib/connectors/campaignHealth";
 import { AppShell } from "@/components/layout/AppShell";
 
 function formatNumber(n: number | null): string {
@@ -15,6 +16,29 @@ function formatCurrency(n: number | null): string {
 }
 function formatPercent(n: number | null): string {
   return n === null ? "—" : `${n.toFixed(2)}%`;
+}
+
+/**
+ * Module 1 of the requested Meta AI Optimization Suite — real trend
+ * indicators and a health score, built entirely on data that already
+ * exists (impressions/clicks/spend/ctr + derived CPC/CPM). Genuinely
+ * shows "not enough data yet" (HelpCircle icon) rather than a fabricated
+ * trend when fewer than 2 real daily data points exist — which, this
+ * soon after the connector started working, is expected for most
+ * metrics right now and will fill in as more days sync.
+ */
+function TrendBadge({ direction, changePercent }: { direction: TrendDirection; changePercent: number | null }) {
+  if (direction === "insufficient_data") {
+    return <span title="Not enough daily history yet"><HelpCircle size={12} className="text-text-muted" /></span>;
+  }
+  const Icon = direction === "improving" ? TrendingUp : direction === "declining" ? TrendingDown : Minus;
+  const colorClass = direction === "improving" ? "text-primary" : direction === "declining" ? "text-destructive" : "text-text-muted";
+  return (
+    <span className={`inline-flex items-center gap-0.5 ${colorClass}`}>
+      <Icon size={12} />
+      {changePercent !== null && <span className="text-[10px] font-mono">{changePercent > 0 ? "+" : ""}{changePercent}%</span>}
+    </span>
+  );
 }
 
 /**
@@ -53,6 +77,25 @@ export default async function CampaignsPage() {
 
   const campaigns = resolveLatestMetrics(campaignRows ?? [], snapshotRows ?? []);
 
+  // Separate, wider query for real trend data — deliberately kept apart
+  // from the 7-day "current value" query above, which already works
+  // correctly and doesn't need to change. Only source_window='daily'
+  // rows are used here, explicitly excluding the initial backfill's
+  // aggregate row (which could represent months of history bundled
+  // into one row) from ever being treated as a single day's data point.
+  const { data: dailySnapshotRows } = externalIds.length > 0
+    ? await supabase.from("metric_snapshots").select("entity_id, metric_key, value, captured_at")
+        .eq("workspace_id", workspaceId!).in("entity_id", externalIds).eq("source_window", "daily")
+        .gte("captured_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
+    : { data: null };
+
+  const healthByExternalId = new Map<string, ReturnType<typeof computeCampaignHealth>>(
+    (campaignRows ?? []).map((c) => [
+      c.external_id,
+      computeCampaignHealth((dailySnapshotRows ?? []).filter((s) => s.entity_id === c.external_id)),
+    ])
+  );
+
   return (
     <AppShell firstName={firstName} initials={firstName.charAt(0).toUpperCase()} isAdmin={!!isAdmin} activeLabel="Campaigns">
       <div className="p-4 sm:p-6 lg:p-8 max-w-4xl mx-auto">
@@ -83,14 +126,25 @@ export default async function CampaignsPage() {
         ) : (
           <div className="card overflow-hidden">
             <div className="divide-y divide-border">
-              {campaigns.map((c) => (
+              {campaigns.map((c) => {
+                const health = healthByExternalId.get(c.externalId);
+                return (
                 <div key={c.id} className="flex items-center gap-4 px-5 py-4">
                   <div className="w-9 h-9 rounded-lg bg-surface-2 border border-border flex items-center justify-center flex-none">
                     <Megaphone size={15} className="text-text-muted" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-text-primary truncate">{c.name}</p>
-                    <p className="text-[11px] text-text-muted font-mono">{c.externalId}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-[11px] text-text-muted font-mono">{c.externalId}</p>
+                      {health?.healthScore !== null && health?.healthScore !== undefined && (
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                          health.healthScore >= 60 ? "bg-primary/10 text-primary" : health.healthScore <= 40 ? "bg-destructive/10 text-destructive" : "bg-surface-2 text-text-muted"
+                        }`} title="Real, transparent score based on genuine trend data — not a black-box AI rating">
+                          Health {health.healthScore}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="grid grid-cols-4 gap-6 flex-none text-right">
                     <div>
@@ -106,12 +160,15 @@ export default async function CampaignsPage() {
                       <p className="text-sm font-semibold text-text-primary">{formatCurrency(c.metrics.spend)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-text-muted">CTR</p>
+                      <p className="text-xs text-text-muted flex items-center justify-end gap-1">
+                        CTR {health && <TrendBadge direction={health.ctr.direction} changePercent={health.ctr.changePercent} />}
+                      </p>
                       <p className="text-sm font-semibold text-text-primary">{formatPercent(c.metrics.ctr)}</p>
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
