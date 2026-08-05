@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, AlertCircle, Users, ListOrdered, MonitorSmartphone, ShoppingCart } from "lucide-react";
+import { ArrowLeft, AlertTriangle, ListOrdered } from "lucide-react";
+import { OpportunityCard } from "@/components/domain/OpportunityCard";
 import { requireUser } from "@/lib/auth/requireUser";
 import { isCurrentUserAdmin } from "@/lib/admin";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
@@ -33,11 +34,7 @@ const SEVERITY_MAP: Record<string, { label: string; className: string }> = {
   placement_outperforming: { label: "Medium", className: "bg-primary/10 text-primary border-primary/20" },
 };
 
-const TYPE_ICON: Record<string, typeof TrendingUp> = {
-  high_ctr_low_spend: TrendingUp, high_spend_low_ctr: TrendingDown,
-  zero_recent_activity: AlertCircle, audience_segment_outperforming: Users,
-  placement_outperforming: MonitorSmartphone, high_ctr_low_conversion: ShoppingCart,
-};
+
 
 /**
  * The real Campaign Detail page. Deliberately does NOT include an "Ask
@@ -192,24 +189,13 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
             <p className="text-sm text-text-muted">No issues or opportunities currently flagged for this campaign.</p>
           ) : (
             <div className="flex flex-col gap-2">
-              {opportunities.map((o) => {
-                const severity = SEVERITY_MAP[o.opportunity_type] ?? { label: "Medium", className: "bg-surface-2 text-text-muted border-border" };
-                const Icon = TYPE_ICON[o.opportunity_type] ?? AlertTriangle;
-                return (
-                  <div key={o.id} className="card p-4 flex items-start gap-3">
-                    <Icon size={14} className="text-text-muted flex-none mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <p className="text-sm font-medium text-text-primary">{o.title}</p>
-                        <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-full border flex-none ${severity.className}`}>{severity.label}</span>
-                      </div>
-                      <p className="text-[11px] text-text-muted font-mono">
-                        {Object.entries(o.evidence as Record<string, unknown>).filter(([k]) => k !== "campaign_name").map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
+              {opportunities.map((o) => (
+                <OpportunityCard
+                  key={o.id}
+                  data={{ id: o.id, opportunityType: o.opportunity_type, title: o.title, evidence: o.evidence as Record<string, unknown>, confidence: o.confidence as "low" | "medium" | "high" }}
+                  badge={SEVERITY_MAP[o.opportunity_type] ?? { label: "Medium", className: "bg-surface-2 text-text-muted border-border" }}
+                />
+              ))}
             </div>
           )}
         </div>

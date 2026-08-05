@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ListChecks, TrendingUp, AlertCircle, TrendingDown, Users, MonitorSmartphone, ShoppingCart } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import { requireUser } from "@/lib/auth/requireUser";
 import { isCurrentUserAdmin } from "@/lib/admin";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
 import { AppShell } from "@/components/layout/AppShell";
+import { OpportunityCard } from "@/components/domain/OpportunityCard";
 import { DismissButton } from "./DismissButton";
 
 interface OpportunityRow {
@@ -17,23 +18,16 @@ interface OpportunityRow {
 }
 
 const CONFIDENCE_RANK = { high: 0, medium: 1, low: 2 };
-
-const TYPE_ICON: Record<string, typeof TrendingUp> = {
-  high_ctr_low_spend: TrendingUp,
-  high_spend_low_ctr: TrendingDown,
-  zero_recent_activity: AlertCircle,
-  audience_segment_outperforming: Users,
-  placement_outperforming: MonitorSmartphone,
-  high_ctr_low_conversion: ShoppingCart,
+const CONFIDENCE_BADGE = {
+  high: { label: "high confidence", className: "bg-primary/10 text-primary border-primary/20" },
+  medium: { label: "medium confidence", className: "bg-surface-2 text-text-muted border-border" },
+  low: { label: "low confidence", className: "bg-surface-2 text-text-muted border-border" },
 };
 
 /**
- * The first real Opportunities page — not the reserved lock. Reads
- * from opportunities, populated by detectOpportunities() running right
- * after each real sync. Every item shown here has real evidence
- * (actual numbers, not a fabricated impact estimate) sitting directly
- * in the card, per the discipline established everywhere else in this
- * project: never a claim without the data that produced it.
+ * The real Opportunities page — now using the shared OpportunityCard
+ * (usability audit finding #3), rather than its own independently
+ * written rendering that could drift from Campaign Detail's version.
  */
 export default async function OpportunitiesPage() {
   const { user, supabase } = await requireUser("/intelligence/opportunities");
@@ -52,10 +46,6 @@ export default async function OpportunitiesPage() {
   const opportunities = ((rows ?? []) as unknown as OpportunityRow[])
     .sort((a, b) => CONFIDENCE_RANK[a.confidence] - CONFIDENCE_RANK[b.confidence] || b.created_at.localeCompare(a.created_at));
 
-  // Real fix from the usability audit: opportunities named a campaign
-  // but linked nowhere. This map converts the external Meta campaign
-  // id (what opportunities store) to the internal campaign_entities id
-  // (what the detail page route actually needs).
   const { data: campaignRows } = workspaceId
     ? await supabase.from("campaign_entities").select("id, external_id").eq("workspace_id", workspaceId)
     : { data: null };
@@ -83,37 +73,19 @@ export default async function OpportunitiesPage() {
         ) : (
           <div className="flex flex-col gap-3">
             {opportunities.map((o) => {
-              const Icon = TYPE_ICON[o.opportunity_type] ?? ListChecks;
+              const campaignId = campaignIdByExternalId.get(o.related_campaign_external_id);
               return (
-                <Link href={campaignIdByExternalId.get(o.related_campaign_external_id) ? `/campaigns/${campaignIdByExternalId.get(o.related_campaign_external_id)}` : "#"}
-                  key={o.id} className="card p-4 block hover:border-border-strong transition-colors">
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-surface-2 border border-border flex items-center justify-center flex-none">
-                      <Icon size={14} className="text-text-muted" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-sm font-semibold text-text-primary">{o.title}</p>
-                        <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-full flex-none ${
-                          o.confidence === "high" ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted border border-border"
-                        }`}>
-                          {o.confidence} confidence
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted font-mono mt-2">
-                        {Object.entries(o.evidence).filter(([k]) => k !== "campaign_name").map(([key, value], i, arr) => (
-                          <span key={key}>
-                            {key.replace(/_/g, " ")}: {typeof value === "number" ? value.toFixed(2) : String(value)}
-                            {i < arr.length - 1 && <span className="text-border-strong mx-1">·</span>}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+                <OpportunityCard
+                  key={o.id}
+                  data={{ id: o.id, opportunityType: o.opportunity_type, title: o.title, evidence: o.evidence, confidence: o.confidence }}
+                  badge={CONFIDENCE_BADGE[o.confidence]}
+                  campaignHref={campaignId ? `/campaigns/${campaignId}` : undefined}
+                  action={
                     <div onClick={(e) => e.preventDefault()}>
                       <DismissButton opportunityId={o.id} />
                     </div>
-                  </div>
-                </Link>
+                  }
+                />
               );
             })}
           </div>
