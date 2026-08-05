@@ -106,7 +106,7 @@ export function CampaignAnalyst({ campaignId, exportData }: { campaignId: string
   }
 
   return (
-    <div>
+    <div id="analyst">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-text-primary flex items-center gap-1.5">
           <Sparkles size={14} className="text-text-muted" />

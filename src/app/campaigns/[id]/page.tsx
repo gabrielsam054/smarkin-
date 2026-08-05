@@ -110,6 +110,16 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           <h1 className="text-lg font-bold text-text-primary">{campaign.name}</h1>
         </div>
 
+        {/* Real audit fix #2: no way to jump between sections as this
+            page has grown. Links only to sections that actually exist
+            for THIS campaign — no dead link to "action plan" for a
+            campaign with zero opportunities. */}
+        <div className="flex gap-4 text-xs font-medium text-text-muted border-b border-border pb-3 -mt-1">
+          <a href="#diagnosis" className="hover:text-text-primary transition-colors">Diagnosis</a>
+          {opportunities.length > 0 && <a href="#action-plan" className="hover:text-text-primary transition-colors">Action Plan</a>}
+          <a href="#analyst" className="hover:text-text-primary transition-colors">Ask the Analyst</a>
+        </div>
+
         {/* Overview grid - every field here is genuinely synced, no
             placeholders. Reach and frequency are real (added this
             session); ROAS/conversions/learning status are deliberately
@@ -173,7 +183,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
 
         {/* Diagnosis — real, reused from Opportunities, never a second
             detection system computed fresh here. */}
-        <div>
+        <div id="diagnosis">
           <h2 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-1.5">
             <AlertTriangle size={14} className="text-text-muted" />
             Diagnosis
@@ -208,7 +218,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
             reframed as a prioritized list. Not a second AI-generated
             plan — a different presentation of the same evidence above. */}
         {opportunities.length > 0 && (
-          <div>
+          <div id="action-plan">
             <h2 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-1.5">
               <ListOrdered size={14} className="text-text-muted" />
               If this were my campaign
