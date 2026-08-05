@@ -58,9 +58,24 @@ export default async function IntegrationsPage({
     connector_health: { state: ConnectedAccount["healthState"]; last_error: string | null } | null;
   };
 
+  // Real bug fix: multiple platform_accounts rows can genuinely exist
+  // for the same connector_key (a reconnect using a different Meta ad
+  // account creates a NEW row rather than updating the old one, since
+  // the upsert's conflict target includes external_account_id). This
+  // loop previously took whichever row the database happened to return
+  // last, with no ordering guarantee — meaning a genuinely active
+  // connection could silently be overwritten by a stale revoked one in
+  // display, exactly the symptom reported. Explicit priority instead:
+  // active > paused > revoked/error, so a real working connection is
+  // never hidden behind a leftover dead one.
+  const STATUS_PRIORITY: Record<string, number> = { active: 0, paused: 1, revoked: 2, error: 2 };
   const accountsByConnector = new Map<string, ConnectedAccount>();
   if (!accountsResult.error) {
     for (const row of (accountsResult.data ?? []) as unknown as AccountRow[]) {
+      const existing = accountsByConnector.get(row.connector_key);
+      if (existing && STATUS_PRIORITY[existing.status] <= STATUS_PRIORITY[row.status]) {
+        continue; // keep the already-stored row if it's equally or more "alive" than this one
+      }
       accountsByConnector.set(row.connector_key, {
         platformAccountId: row.id,
         connectorKey: row.connector_key,
