@@ -140,6 +140,28 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           <div><p className="text-xs text-text-muted mb-1">ROAS</p><p className="text-lg font-semibold text-text-primary">{health.roas.current !== null ? `${health.roas.current.toFixed(2)}x` : "—"}</p></div>
         </div>
 
+        {/* Real, earned delight — not manufactured enthusiasm. Only
+            appears when the health score is genuinely high AND at
+            least two real metrics are genuinely trending improving;
+            cites the actual metrics, never generic praise. */}
+        {(() => {
+          const improvingMetrics = [
+            { label: "CTR", t: health.ctr }, { label: "CPC", t: health.cpc },
+            { label: "CPM", t: health.cpm }, { label: "ROAS", t: health.roas },
+          ].filter((m) => m.t.direction === "improving");
+          if (health.healthScore !== null && health.healthScore >= 75 && improvingMetrics.length >= 2) {
+            return (
+              <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 mb-4 flex items-center gap-2.5">
+                <span className="text-base">🎉</span>
+                <p className="text-sm text-text-primary">
+                  This campaign is genuinely performing well — {improvingMetrics.map((m) => m.label).join(" and ")} are both trending up, real health score of {health.healthScore}.
+                </p>
+              </div>
+            );
+          }
+          return null;
+        })()}
+
         {dailyPacingPercent !== null && (
           <div className="card p-4 flex items-center justify-between">
             <p className="text-sm text-text-secondary">Daily budget pacing</p>
