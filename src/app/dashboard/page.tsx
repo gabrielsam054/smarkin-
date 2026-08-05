@@ -14,6 +14,8 @@ import { isCurrentUserAdmin } from "@/lib/admin";
 import type { Subscription, PlanId } from "@/lib/billing";
 import { AppShell } from "@/components/layout/AppShell";
 import { CommandBar } from "@/components/ai/CommandBar";
+import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
+import { buildDailyBriefing } from "@/lib/dailyBriefing";
 
 // ── Mini sparkline (deterministic per metric) ─────────────────
 function Spark({ color, seed }: { color: string; seed: number }) {
@@ -78,6 +80,14 @@ export default async function DashboardPage() {
   const activePlan     = subscription ? PLANS[subscription.planId] : null;
   const days           = daysRemaining(subscription);
   const count          = totalAnalyses ?? 0;
+
+  // Real daily briefing — genuine counts from real opportunities and
+  // health trends, fetched separately since it needs workspaceId
+  // resolved first. Best-effort: if this fails for any reason, the
+  // rest of Mission Control still renders correctly, just without
+  // the briefing section.
+  const workspaceId = await resolveWorkspaceId(user.id, supabase);
+  const briefing = workspaceId ? await buildDailyBriefing(supabase, workspaceId) : null;
   const hasAccess      = subscription?.status === "active";
   const usedThisPeriod = usageRow?.analyses ?? 0;
   const LIMITS: Record<string, number | null> = { trial: 20, pro: null, agency: null };
@@ -127,6 +137,38 @@ export default async function DashboardPage() {
             Here&apos;s what&apos;s happening with your ad intelligence today.
           </p>
         </div>
+
+        {/* ── Daily Briefing — real synthesis, not fabricated ──── */}
+        {briefing?.hasConnectedAccount && briefing.openOpportunityCount > 0 && (
+          <div className="card p-5 mb-6">
+            <div className="flex items-center gap-2 mb-3">
+              <Zap size={14} className="text-primary" />
+              <p className="text-sm font-semibold text-text-primary">Today&apos;s briefing</p>
+            </div>
+            <p className="text-sm text-text-secondary mb-3">
+              {briefing.openOpportunityCount} open {briefing.openOpportunityCount === 1 ? "finding" : "findings"} across your connected campaigns
+              {briefing.criticalCount > 0 && <span className="text-destructive font-medium"> — {briefing.criticalCount} need attention</span>}
+              {briefing.campaignsImproving > 0 && `. ${briefing.campaignsImproving} ${briefing.campaignsImproving === 1 ? "campaign is" : "campaigns are"} trending up`}
+              {briefing.campaignsDeclining > 0 && `, ${briefing.campaignsDeclining} trending down`}.
+            </p>
+            {briefing.topPriorities.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {briefing.topPriorities.map((p, i) => (
+                  <p key={i} className="text-xs text-text-secondary">
+                    <span className="text-text-muted font-mono">{i + 1}.</span> {p.title}
+                  </p>
+                ))}
+              </div>
+            )}
+            <Link href="/intelligence/opportunities" className="text-xs font-medium text-primary hover:underline mt-3 inline-block">View all opportunities →</Link>
+          </div>
+        )}
+        {briefing?.hasConnectedAccount && briefing.openOpportunityCount === 0 && (
+          <div className="card p-4 mb-6 flex items-center gap-2.5">
+            <CheckCircle size={14} className="text-primary flex-none" />
+            <p className="text-sm text-text-secondary">Nothing flagged across your connected campaigns right now — steady as of the last sync.</p>
+          </div>
+        )}
 
         {/* ── No subscription banner ─────────────────── */}
         {!hasAccess && (
