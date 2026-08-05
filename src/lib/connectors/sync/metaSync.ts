@@ -143,7 +143,13 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   // connected account's first request fast and predictable rather than
   // risk one huge slow call; widening this later is a one-line change,
   // not a design change.
-  insightsUrl.searchParams.set("date_preset", job.jobClass === "backfill" ? "last_90d" : "yesterday");
+  // Widened from the original 90-day starting point: confirmed too
+  // narrow for accounts whose real campaigns are older with no recent
+  // spend — Meta's Insights API reports performance, not a directory
+  // of all campaigns, so a narrow window can legitimately return zero
+  // rows for an account that's genuinely connected and has real history
+  // further back. "maximum" is Meta's own broadest available range.
+  insightsUrl.searchParams.set("date_preset", job.jobClass === "backfill" ? "maximum" : "yesterday");
 
   const res = await fetch(insightsUrl.toString());
   if (!res.ok) {
