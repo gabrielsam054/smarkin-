@@ -132,7 +132,7 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   const insightsUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/act_${account.external_account_id}/insights`);
   insightsUrl.searchParams.set("access_token", accessToken);
   insightsUrl.searchParams.set("level", "campaign");
-  insightsUrl.searchParams.set("fields", "campaign_id,campaign_name,impressions,clicks,spend,ctr");
+  insightsUrl.searchParams.set("fields", "campaign_id,campaign_name,impressions,clicks,spend,ctr,reach,frequency");
   // The gap this closes: job.jobClass was carried through the entire
   // pipeline since Feature 10 and never read here — every sync,
   // including the explicitly-designed first "backfill" job, was
@@ -185,7 +185,7 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     throw new Error(`Meta Insights API returned ${res.status}`);
   }
 
-  const body = await res.json() as { data: Array<{ campaign_id: string; campaign_name?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }> };
+  const body = await res.json() as { data: Array<{ campaign_id: string; campaign_name?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string; reach?: string; frequency?: string }> };
 
   const capturedAt = new Date().toISOString();
   // Tagged at write time, not reconstructed later — a backfill's
@@ -197,6 +197,7 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   const snapshots = body.data.flatMap((row) => {
     const metrics: Array<[string, string | undefined]> = [
       ["impressions", row.impressions], ["clicks", row.clicks], ["spend", row.spend], ["ctr", row.ctr],
+      ["reach", row.reach], ["frequency", row.frequency],
     ];
     return metrics
       .filter(([, value]) => value !== undefined)
@@ -236,18 +237,19 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   // against Meta's documented API behavior; like every other Meta
   // response-shape assumption in this connector, genuinely unverified
   // against a live account until this runs for real.
-  const budgetByCampaignId = new Map<string, { dailyBudget: number | null; lifetimeBudget: number | null }>();
+  const budgetByCampaignId = new Map<string, { dailyBudget: number | null; lifetimeBudget: number | null; objective: string | null }>();
   try {
     const budgetUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/act_${account.external_account_id}/campaigns`);
     budgetUrl.searchParams.set("access_token", accessToken);
-    budgetUrl.searchParams.set("fields", "id,daily_budget,lifetime_budget");
+    budgetUrl.searchParams.set("fields", "id,daily_budget,lifetime_budget,objective");
     const budgetRes = await fetch(budgetUrl.toString());
     if (budgetRes.ok) {
-      const budgetBody = await budgetRes.json() as { data: Array<{ id: string; daily_budget?: string; lifetime_budget?: string }> };
+      const budgetBody = await budgetRes.json() as { data: Array<{ id: string; daily_budget?: string; lifetime_budget?: string; objective?: string }> };
       for (const c of budgetBody.data) {
         budgetByCampaignId.set(c.id, {
           dailyBudget: c.daily_budget ? Number(c.daily_budget) / 100 : null,
           lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
+          objective: c.objective ?? null,
         });
       }
     } else {
@@ -272,6 +274,7 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
       synced_at: capturedAt,
       daily_budget: budgetByCampaignId.get(row.campaign_id)?.dailyBudget ?? null,
       lifetime_budget: budgetByCampaignId.get(row.campaign_id)?.lifetimeBudget ?? null,
+      objective: budgetByCampaignId.get(row.campaign_id)?.objective ?? null,
     }));
 
   if (campaignEntities.length > 0) {

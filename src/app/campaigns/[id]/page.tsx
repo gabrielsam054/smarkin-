@@ -1,0 +1,192 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, AlertCircle, Users, ListOrdered } from "lucide-react";
+import { requireUser } from "@/lib/auth/requireUser";
+import { isCurrentUserAdmin } from "@/lib/admin";
+import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
+import { computeCampaignHealth } from "@/lib/connectors/campaignHealth";
+import { AppShell } from "@/components/layout/AppShell";
+
+function formatNumber(n: number | null): string {
+  return n === null ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+function formatCurrency(n: number | null): string {
+  return n === null ? "—" : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function formatPercent(n: number | null): string {
+  return n === null ? "—" : `${n.toFixed(2)}%`;
+}
+
+// A real, disclosed mapping — not an invented severity score. Based on
+// what each opportunity type actually represents: zero activity is a
+// real operational problem (a campaign that might be effectively dead);
+// high spend with low CTR is real money being spent inefficiently;
+// the "outperforming" findings are positive signals, not urgent
+// problems, so they land at Medium rather than being over-dramatized.
+const SEVERITY_MAP: Record<string, { label: string; className: string }> = {
+  zero_recent_activity: { label: "Critical", className: "bg-destructive/10 text-destructive border-destructive/20" },
+  high_spend_low_ctr: { label: "High", className: "bg-destructive/10 text-destructive border-destructive/20" },
+  high_ctr_low_spend: { label: "Medium", className: "bg-primary/10 text-primary border-primary/20" },
+  audience_segment_outperforming: { label: "Medium", className: "bg-primary/10 text-primary border-primary/20" },
+};
+
+const TYPE_ICON: Record<string, typeof TrendingUp> = {
+  high_ctr_low_spend: TrendingUp, high_spend_low_ctr: TrendingDown,
+  zero_recent_activity: AlertCircle, audience_segment_outperforming: Users,
+};
+
+/**
+ * The real Campaign Detail page. Deliberately does NOT include an "Ask
+ * AI about this campaign" chat — that's a genuine architectural
+ * departure (real LLM-generated language) from everything else in this
+ * connector work, which has been provably deterministic throughout,
+ * and deserves its own explicit decision rather than being bundled in
+ * here. The "diagnosis" and "if this were my campaign" sections below
+ * both reuse the SAME real, already-stored Opportunities for this
+ * campaign — not a second, parallel detection system.
+ */
+export default async function CampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const { user, supabase } = await requireUser(`/campaigns/${id}`);
+  const [{ data: profile }, isAdmin] = await Promise.all([
+    supabase.from("profiles").select("first_name").eq("id", user.id).single(),
+    isCurrentUserAdmin(),
+  ]);
+  const firstName = profile?.first_name || user.email?.split("@")[0] || "there";
+
+  const workspaceId = await resolveWorkspaceId(user.id, supabase);
+  if (!workspaceId) notFound();
+
+  const { data: campaign } = await supabase
+    .from("campaign_entities")
+    .select("id, external_id, name, objective, daily_budget, lifetime_budget, synced_at")
+    .eq("id", id).eq("workspace_id", workspaceId).single();
+
+  if (!campaign) notFound();
+
+  const { data: dailySnapshots } = await supabase
+    .from("metric_snapshots").select("metric_key, value, captured_at")
+    .eq("workspace_id", workspaceId).eq("entity_id", campaign.external_id).eq("source_window", "daily")
+    .gte("captured_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+
+  const { data: latestSnapshots } = await supabase
+    .from("metric_snapshots").select("metric_key, value, captured_at")
+    .eq("workspace_id", workspaceId).eq("entity_id", campaign.external_id)
+    .order("captured_at", { ascending: false }).limit(20);
+
+  const latestByMetric = new Map<string, number>();
+  for (const s of latestSnapshots ?? []) {
+    if (!latestByMetric.has(s.metric_key)) latestByMetric.set(s.metric_key, s.value);
+  }
+
+  const health = computeCampaignHealth(dailySnapshots ?? []);
+
+  const { data: opportunityRows } = await supabase
+    .from("opportunities").select("id, opportunity_type, title, evidence, confidence")
+    .eq("workspace_id", workspaceId).eq("related_campaign_external_id", campaign.external_id).eq("status", "open");
+  const opportunities = opportunityRows ?? [];
+
+  const dailyPacingPercent = campaign.daily_budget && latestByMetric.get("spend") !== undefined
+    ? Math.round(((latestByMetric.get("spend") ?? 0) / campaign.daily_budget) * 100)
+    : null;
+
+  return (
+    <AppShell firstName={firstName} initials={firstName.charAt(0).toUpperCase()} isAdmin={!!isAdmin} activeLabel="Campaigns"
+      headerLeft={<Link href="/campaigns" className="text-text-muted hover:text-text-primary transition-colors"><ArrowLeft size={18} /></Link>}>
+      <div className="max-w-3xl mx-auto px-4 sm:px-8 py-8 flex flex-col gap-5">
+        <div>
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <p className="text-xs font-mono uppercase tracking-wider text-text-muted">Campaign</p>
+            {campaign.objective && (
+              <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-full bg-surface-2 border border-border text-text-muted">
+                {campaign.objective.replace(/_/g, " ")}
+              </span>
+            )}
+          </div>
+          <h1 className="text-lg font-bold text-text-primary">{campaign.name}</h1>
+        </div>
+
+        {/* Overview grid - every field here is genuinely synced, no
+            placeholders. Reach and frequency are real (added this
+            session); ROAS/conversions/learning status are deliberately
+            absent, not shown as "—" placeholders implying they were
+            attempted and came back empty, since that would misleadingly
+            imply Smarkin tried to fetch them. */}
+        <div className="card p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div><p className="text-xs text-text-muted mb-1">Health score</p><p className="text-lg font-semibold text-text-primary">{health.healthScore ?? "—"}</p></div>
+          <div><p className="text-xs text-text-muted mb-1">Impressions</p><p className="text-lg font-semibold text-text-primary">{formatNumber(latestByMetric.get("impressions") ?? null)}</p></div>
+          <div><p className="text-xs text-text-muted mb-1">Reach</p><p className="text-lg font-semibold text-text-primary">{formatNumber(latestByMetric.get("reach") ?? null)}</p></div>
+          <div><p className="text-xs text-text-muted mb-1">Frequency</p><p className="text-lg font-semibold text-text-primary">{latestByMetric.get("frequency")?.toFixed(2) ?? "—"}</p></div>
+          <div><p className="text-xs text-text-muted mb-1">Clicks</p><p className="text-lg font-semibold text-text-primary">{formatNumber(latestByMetric.get("clicks") ?? null)}</p></div>
+          <div><p className="text-xs text-text-muted mb-1">Spend</p><p className="text-lg font-semibold text-text-primary">{formatCurrency(latestByMetric.get("spend") ?? null)}</p></div>
+          <div><p className="text-xs text-text-muted mb-1">CTR</p><p className="text-lg font-semibold text-text-primary">{formatPercent(latestByMetric.get("ctr") ?? null)}</p></div>
+          <div><p className="text-xs text-text-muted mb-1">CPC</p><p className="text-lg font-semibold text-text-primary">{formatCurrency(health.cpc.current)}</p></div>
+        </div>
+
+        {dailyPacingPercent !== null && (
+          <div className="card p-4 flex items-center justify-between">
+            <p className="text-sm text-text-secondary">Daily budget pacing</p>
+            <p className={`text-sm font-semibold ${dailyPacingPercent > 100 ? "text-destructive" : "text-text-primary"}`}>
+              {dailyPacingPercent}% of {formatCurrency(campaign.daily_budget)}
+            </p>
+          </div>
+        )}
+
+        {/* Diagnosis — real, reused from Opportunities, never a second
+            detection system computed fresh here. */}
+        <div>
+          <h2 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-1.5">
+            <AlertTriangle size={14} className="text-text-muted" />
+            Diagnosis
+          </h2>
+          {opportunities.length === 0 ? (
+            <p className="text-sm text-text-muted">No issues or opportunities currently flagged for this campaign.</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {opportunities.map((o) => {
+                const severity = SEVERITY_MAP[o.opportunity_type] ?? { label: "Medium", className: "bg-surface-2 text-text-muted border-border" };
+                const Icon = TYPE_ICON[o.opportunity_type] ?? AlertTriangle;
+                return (
+                  <div key={o.id} className="card p-4 flex items-start gap-3">
+                    <Icon size={14} className="text-text-muted flex-none mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <p className="text-sm font-medium text-text-primary">{o.title}</p>
+                        <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-full border flex-none ${severity.className}`}>{severity.label}</span>
+                      </div>
+                      <p className="text-[11px] text-text-muted font-mono">
+                        {Object.entries(o.evidence as Record<string, unknown>).filter(([k]) => k !== "campaign_name").map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(" · ")}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* "If this were my campaign" - the same real opportunities,
+            reframed as a prioritized list. Not a second AI-generated
+            plan — a different presentation of the same evidence above. */}
+        {opportunities.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-1.5">
+              <ListOrdered size={14} className="text-text-muted" />
+              If this were my campaign
+            </h2>
+            <div className="card p-5">
+              <ol className="flex flex-col gap-2 text-sm text-text-secondary list-decimal list-inside">
+                {opportunities
+                  .slice()
+                  .sort((a, b) => (a.confidence === "high" ? 0 : a.confidence === "medium" ? 1 : 2) - (b.confidence === "high" ? 0 : b.confidence === "medium" ? 1 : 2))
+                  .map((o) => (
+                    <li key={o.id}>{o.title} <span className="text-text-muted">({o.confidence} confidence)</span></li>
+                  ))}
+              </ol>
+            </div>
+          </div>
+        )}
+      </div>
+    </AppShell>
+  );
+}

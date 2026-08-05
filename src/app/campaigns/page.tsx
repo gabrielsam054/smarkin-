@@ -65,7 +65,7 @@ export default async function CampaignsPage() {
     : { data: null };
 
   const { data: campaignRows } = workspaceId
-    ? await supabase.from("campaign_entities").select("id, external_id, name, synced_at").eq("workspace_id", workspaceId).eq("kind", "campaign")
+    ? await supabase.from("campaign_entities").select("id, external_id, name, synced_at, daily_budget, lifetime_budget").eq("workspace_id", workspaceId).eq("kind", "campaign")
     : { data: null };
 
   const externalIds = (campaignRows ?? []).map((c) => c.external_id);
@@ -94,6 +94,10 @@ export default async function CampaignsPage() {
       c.external_id,
       computeCampaignHealth((dailySnapshotRows ?? []).filter((s) => s.entity_id === c.external_id)),
     ])
+  );
+
+  const budgetByExternalId = new Map<string, { daily: number | null; lifetime: number | null }>(
+    (campaignRows ?? []).map((c) => [c.external_id, { daily: c.daily_budget as number | null, lifetime: c.lifetime_budget as number | null }])
   );
 
   return (
@@ -128,8 +132,19 @@ export default async function CampaignsPage() {
             <div className="divide-y divide-border">
               {campaigns.map((c) => {
                 const health = healthByExternalId.get(c.externalId);
+                const budget = budgetByExternalId.get(c.externalId);
+                // Real pacing, only for daily budgets — spend / budget
+                // for the most recent real day. Lifetime budget pacing
+                // would need a true cumulative-spend aggregate this
+                // system doesn't cleanly have yet (metric_snapshots is
+                // per-day plus one backfill aggregate, not a running
+                // total) — shown as a raw number instead of a
+                // fabricated percentage.
+                const dailyPacingPercent = budget?.daily && c.metrics.spend !== null
+                  ? Math.round((c.metrics.spend / budget.daily) * 100)
+                  : null;
                 return (
-                <div key={c.id} className="flex items-center gap-4 px-5 py-4">
+                <Link href={`/campaigns/${c.id}`} key={c.id} className="flex items-center gap-4 px-5 py-4 hover:bg-surface-2 transition-colors">
                   <div className="w-9 h-9 rounded-lg bg-surface-2 border border-border flex items-center justify-center flex-none">
                     <Megaphone size={15} className="text-text-muted" />
                   </div>
@@ -142,6 +157,18 @@ export default async function CampaignsPage() {
                           health.healthScore >= 60 ? "bg-primary/10 text-primary" : health.healthScore <= 40 ? "bg-destructive/10 text-destructive" : "bg-surface-2 text-text-muted"
                         }`} title="Real, transparent score based on genuine trend data — not a black-box AI rating">
                           Health {health.healthScore}
+                        </span>
+                      )}
+                      {dailyPacingPercent !== null && (
+                        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                          dailyPacingPercent > 100 ? "bg-destructive/10 text-destructive" : "bg-surface-2 text-text-muted"
+                        }`} title={`$${c.metrics.spend?.toFixed(2)} spent of $${budget?.daily?.toFixed(2)} daily budget`}>
+                          {dailyPacingPercent}% of daily budget
+                        </span>
+                      )}
+                      {!budget?.daily && budget?.lifetime && (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-surface-2 text-text-muted">
+                          ${budget.lifetime.toFixed(2)} lifetime budget
                         </span>
                       )}
                     </div>
@@ -166,7 +193,7 @@ export default async function CampaignsPage() {
                       <p className="text-sm font-semibold text-text-primary">{formatPercent(c.metrics.ctr)}</p>
                     </div>
                   </div>
-                </div>
+                </Link>
                 );
               })}
             </div>
