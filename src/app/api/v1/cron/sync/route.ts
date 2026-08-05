@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { claimSyncJobs, markJobSucceeded, markJobFailed, enqueueNextIncrementalJob, reapStaleJobs } from "@/lib/connectors/sync/queue";
 import { syncMetaCampaignInsights, CircuitOpenError } from "@/lib/connectors/sync/metaSync";
 import { recordSyncFailure } from "@/lib/connectors/sync/connectorHealth";
-import { detectOpportunities } from "@/lib/connectors/detectOpportunities";
+import { detectOpportunities, detectAudienceOpportunities } from "@/lib/connectors/detectOpportunities";
 import { buildServiceRoleClient } from "@/lib/supabase/serviceClient";
 
 /**
@@ -94,6 +94,11 @@ export async function GET(request: NextRequest) {
           await detectOpportunities(supabase, job.platformAccountId);
         } catch (err) {
           console.error(`[cron/sync] opportunity detection failed for ${job.platformAccountId}:`, err);
+        }
+        try {
+          await detectAudienceOpportunities(supabase, job.platformAccountId);
+        } catch (err) {
+          console.error(`[cron/sync] audience opportunity detection failed for ${job.platformAccountId}:`, err);
         }
       }
     } catch (err) {

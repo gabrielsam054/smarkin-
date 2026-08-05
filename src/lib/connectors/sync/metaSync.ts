@@ -222,6 +222,45 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   // was captured. Upserting real campaign_entities rows here is what
   // makes a genuine Campaigns page possible at all, not just a table of
   // opaque ids next to numbers.
+  // Real budget data — a genuinely separate Meta API call, since
+  // budget lives on the campaign object itself, never on Insights
+  // (which only reports what was actually spent, not what was
+  // allotted). Fetches every campaign on the account rather than
+  // filtering to specific IDs — simpler and more robust than relying
+  // on Meta's filtering query-param syntax, which isn't something this
+  // connector can verify without a live response to test against.
+  //
+  // Meta returns daily_budget/lifetime_budget in the account's
+  // currency's MINOR unit (cents for USD) — divided by 100 here to
+  // match spend's existing major-unit convention (dollars). Correct
+  // against Meta's documented API behavior; like every other Meta
+  // response-shape assumption in this connector, genuinely unverified
+  // against a live account until this runs for real.
+  const budgetByCampaignId = new Map<string, { dailyBudget: number | null; lifetimeBudget: number | null }>();
+  try {
+    const budgetUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/act_${account.external_account_id}/campaigns`);
+    budgetUrl.searchParams.set("access_token", accessToken);
+    budgetUrl.searchParams.set("fields", "id,daily_budget,lifetime_budget");
+    const budgetRes = await fetch(budgetUrl.toString());
+    if (budgetRes.ok) {
+      const budgetBody = await budgetRes.json() as { data: Array<{ id: string; daily_budget?: string; lifetime_budget?: string }> };
+      for (const c of budgetBody.data) {
+        budgetByCampaignId.set(c.id, {
+          dailyBudget: c.daily_budget ? Number(c.daily_budget) / 100 : null,
+          lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
+        });
+      }
+    } else {
+      console.error(`[sync] budget fetch returned ${budgetRes.status} for platform_account ${job.platformAccountId} — campaign_entities will save without budget data this run.`);
+    }
+  } catch (err) {
+    // Best-effort, deliberately: budget is real, valuable enrichment,
+    // not a dependency the core sync should fail over. A failed budget
+    // fetch still lets the actual performance metrics (already
+    // resolved above) save correctly.
+    console.error(`[sync] budget fetch failed for platform_account ${job.platformAccountId}, continuing without it:`, err);
+  }
+
   const campaignEntities = body.data
     .filter((row) => row.campaign_name)
     .map((row) => ({
@@ -231,6 +270,8 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
       kind: "campaign" as const,
       name: row.campaign_name,
       synced_at: capturedAt,
+      daily_budget: budgetByCampaignId.get(row.campaign_id)?.dailyBudget ?? null,
+      lifetime_budget: budgetByCampaignId.get(row.campaign_id)?.lifetimeBudget ?? null,
     }));
 
   if (campaignEntities.length > 0) {
@@ -248,6 +289,60 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   const { error: insertError } = await supabase.from("metric_snapshots").insert(snapshots);
   if (insertError) {
     throw new Error(`Failed writing metric_snapshots (table may not exist yet): ${insertError.message}`);
+  }
+
+  // Real audience breakdown data — a separate call, deliberately
+  // scoped to age+gender only (the one combination Meta documents as
+  // compatible together in a single request; placement/device/country
+  // is a different compatibility group and a genuinely separate call,
+  // not bundled in here). Best-effort: runs after the core metrics
+  // are already safely written, so a breakdown failure never risks
+  // the sync's own real, already-confirmed success.
+  try {
+    const breakdownUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/act_${account.external_account_id}/insights`);
+    breakdownUrl.searchParams.set("access_token", accessToken);
+    breakdownUrl.searchParams.set("level", "campaign");
+    breakdownUrl.searchParams.set("fields", "campaign_id,impressions,clicks,spend,ctr");
+    breakdownUrl.searchParams.set("breakdowns", "age,gender");
+    breakdownUrl.searchParams.set("date_preset", job.jobClass === "backfill" ? "maximum" : "yesterday");
+
+    const breakdownRes = await fetch(breakdownUrl.toString());
+    if (breakdownRes.ok) {
+      const breakdownBody = await breakdownRes.json() as {
+        data: Array<{ campaign_id: string; age?: string; gender?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }>
+      };
+
+      const breakdownSnapshots = breakdownBody.data.flatMap((row) => {
+        if (!row.age || !row.gender) return []; // Meta can return an "unknown" bucket without these — skip rather than store a misleading blank segment
+        const metrics: Array<[string, string | undefined]> = [
+          ["impressions", row.impressions], ["clicks", row.clicks], ["spend", row.spend], ["ctr", row.ctr],
+        ];
+        return metrics
+          .filter(([, value]) => value !== undefined)
+          .map(([metricKey, value]) => ({
+            workspace_id: account.workspace_id,
+            platform_account_id: job.platformAccountId,
+            entity_id: row.campaign_id,
+            age_range: row.age!,
+            gender: row.gender!,
+            metric_key: metricKey,
+            value: Number(value),
+            captured_at: capturedAt,
+            source_window: sourceWindow,
+          }));
+      });
+
+      if (breakdownSnapshots.length > 0) {
+        const { error: breakdownInsertError } = await supabase.from("campaign_breakdown_snapshots").insert(breakdownSnapshots);
+        if (breakdownInsertError) {
+          console.error(`[sync] failed writing campaign_breakdown_snapshots for platform_account ${job.platformAccountId} (table may not exist yet):`, breakdownInsertError.message);
+        }
+      }
+    } else {
+      console.error(`[sync] breakdown fetch returned ${breakdownRes.status} for platform_account ${job.platformAccountId} — continuing without audience breakdown data this run.`);
+    }
+  } catch (err) {
+    console.error(`[sync] breakdown fetch failed for platform_account ${job.platformAccountId}, continuing without it:`, err);
   }
 
   await recordSyncSuccess(job.platformAccountId);

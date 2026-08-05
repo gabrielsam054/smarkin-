@@ -106,13 +106,110 @@ export async function detectOpportunities(
 
   // Upsert on the real unique constraint — re-running detection
   // updates existing open opportunities with fresh evidence rather
-  // than creating duplicates every sync cycle.
+  // than creating duplicates every sync cycle. related_segment_key is
+  // explicitly null here — these are campaign-level findings, not
+  // segment-level ones (that's detectAudienceOpportunities below) —
+  // matching the constraint's real shape now that it accounts for both.
   const { error } = await supabase.from("opportunities").upsert(
-    opportunities.map((o) => ({ ...o, workspace_id: workspaceId, platform_account_id: platformAccountId, status: "open" })),
-    { onConflict: "platform_account_id,related_campaign_external_id,opportunity_type" }
+    opportunities.map((o) => ({ ...o, workspace_id: workspaceId, platform_account_id: platformAccountId, status: "open", related_segment_key: null })),
+    { onConflict: "platform_account_id,related_campaign_external_id,opportunity_type,related_segment_key" }
   );
 
   if (error) {
     console.error(`[opportunities] failed to write detected opportunities for ${platformAccountId}:`, error.message);
+  }
+}
+
+/**
+ * Extends Opportunities with real within-campaign audience findings,
+ * now that age+gender breakdown data actually exists to detect from.
+ * Same comparative discipline as detectOpportunities(): a segment is
+ * only flagged if it deviates meaningfully from that SAME campaign's
+ * own overall average — never against an external benchmark, and
+ * never with a fabricated confidence when there isn't enough real
+ * segment data to compare.
+ */
+export async function detectAudienceOpportunities(
+  supabase: SupabaseClient,
+  platformAccountId: string
+): Promise<void> {
+  const { data: accountRow } = await supabase
+    .from("platform_accounts")
+    .select("workspace_id")
+    .eq("id", platformAccountId)
+    .maybeSingle();
+
+  if (!accountRow?.workspace_id) return;
+  const workspaceId = accountRow.workspace_id;
+
+  const { data: campaignRows } = await supabase
+    .from("campaign_entities")
+    .select("external_id, name")
+    .eq("platform_account_id", platformAccountId)
+    .eq("kind", "campaign");
+
+  if (!campaignRows || campaignRows.length === 0) return;
+
+  const { data: breakdownRows } = await supabase
+    .from("campaign_breakdown_snapshots")
+    .select("entity_id, age_range, gender, metric_key, value, captured_at")
+    .eq("workspace_id", workspaceId)
+    .in("entity_id", campaignRows.map((c) => c.external_id))
+    .gte("captured_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+
+  if (!breakdownRows || breakdownRows.length === 0) return;
+
+  const opportunities: Array<{
+    related_campaign_external_id: string; related_segment_key: string; opportunity_type: string; title: string;
+    evidence: Record<string, unknown>; confidence: string;
+  }> = [];
+
+  for (const campaign of campaignRows) {
+    // Latest CTR per real segment for this specific campaign — same
+    // "latest value per group" pattern as resolveLatestMetrics, applied
+    // to the segment dimension instead of the campaign dimension.
+    const segmentCtr = new Map<string, { value: number; capturedAt: string }>();
+    for (const row of breakdownRows) {
+      if (row.entity_id !== campaign.external_id || row.metric_key !== "ctr") continue;
+      const key = `${row.age_range}|${row.gender}`;
+      const existing = segmentCtr.get(key);
+      if (!existing || row.captured_at > existing.capturedAt) {
+        segmentCtr.set(key, { value: row.value, capturedAt: row.captured_at });
+      }
+    }
+
+    if (segmentCtr.size < 2) continue; // need real peer segments to compare against, same discipline as the campaign-level detector
+
+    const values = Array.from(segmentCtr.values()).map((v) => v.value);
+    const avgCtr = values.reduce((s, v) => s + v, 0) / values.length;
+    const confidence = segmentCtr.size >= 6 ? "high" : segmentCtr.size >= 3 ? "medium" : "low";
+
+    for (const [key, point] of segmentCtr.entries()) {
+      if (point.value > avgCtr * 1.5) {
+        const [ageRange, gender] = key.split("|");
+        opportunities.push({
+          related_campaign_external_id: campaign.external_id,
+          related_segment_key: key,
+          opportunity_type: "audience_segment_outperforming",
+          title: `In "${campaign.name}", the ${ageRange} ${gender} segment is significantly outperforming other segments`,
+          evidence: {
+            segment_ctr: Number(point.value.toFixed(2)), campaign_avg_ctr: Number(avgCtr.toFixed(2)),
+            age_range: ageRange, gender, campaign_name: campaign.name,
+          },
+          confidence,
+        });
+      }
+    }
+  }
+
+  if (opportunities.length === 0) return;
+
+  const { error } = await supabase.from("opportunities").upsert(
+    opportunities.map((o) => ({ ...o, workspace_id: workspaceId, platform_account_id: platformAccountId, status: "open" })),
+    { onConflict: "platform_account_id,related_campaign_external_id,opportunity_type,related_segment_key" }
+  );
+
+  if (error) {
+    console.error(`[opportunities] failed to write detected audience opportunities for ${platformAccountId}:`, error.message);
   }
 }
