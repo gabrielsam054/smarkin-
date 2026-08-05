@@ -55,15 +55,18 @@ Open opportunities already detected for this campaign: ${JSON.stringify(context.
 
 Audience segments (age/gender CTR, if any): ${JSON.stringify(context.audienceSegments)}
 
+Placement/device segments (publisher platform, position, device CTR, if any): ${JSON.stringify(context.placementSegments)}
+
 DATA AVAILABILITY — explicitly note these gaps in your limitations when relevant:
 - Reach data: ${context.dataAvailability.hasReach ? "available" : "NOT available"}
 - Frequency data: ${context.dataAvailability.hasFrequency ? "available" : "NOT available"}
 - Budget data: ${context.dataAvailability.hasBudget ? "available" : "NOT available"}
-- Audience breakdown data: ${context.dataAvailability.hasAudienceData ? "available" : "NOT available"}
+- Audience breakdown data (age/gender): ${context.dataAvailability.hasAudienceData ? "available" : "NOT available"}
+- Placement/device breakdown data: ${context.dataAvailability.hasPlacementData ? "available" : "NOT available"}
 - Days of real daily history: ${context.dataAvailability.daysOfDailyHistory}
+- Country/region breakdown: NEVER available in this system — always note if relevant
 - Creative data (headlines, images, video): NEVER available in this system — always note if relevant
 - Conversion/ROAS data: NEVER available in this system — always note if relevant
-- Placement/device/country breakdown: NEVER available in this system — always note if relevant
 
 USER QUESTION: ${question}`;
 }

@@ -213,3 +213,93 @@ export async function detectAudienceOpportunities(
     console.error(`[opportunities] failed to write detected audience opportunities for ${platformAccountId}:`, error.message);
   }
 }
+
+/**
+ * Same real comparative discipline as detectAudienceOpportunities,
+ * applied to the second breakdown dimension (placement + device
+ * rather than age + gender). A genuinely separate function rather than
+ * a parameterized generic one — the two breakdown tables have
+ * different column shapes, and forcing them through one abstraction
+ * would add indirection without saving meaningful code.
+ */
+export async function detectPlacementOpportunities(
+  supabase: SupabaseClient,
+  platformAccountId: string
+): Promise<void> {
+  const { data: accountRow } = await supabase
+    .from("platform_accounts")
+    .select("workspace_id")
+    .eq("id", platformAccountId)
+    .maybeSingle();
+
+  if (!accountRow?.workspace_id) return;
+  const workspaceId = accountRow.workspace_id;
+
+  const { data: campaignRows } = await supabase
+    .from("campaign_entities")
+    .select("external_id, name")
+    .eq("platform_account_id", platformAccountId)
+    .eq("kind", "campaign");
+
+  if (!campaignRows || campaignRows.length === 0) return;
+
+  const { data: placementRows } = await supabase
+    .from("campaign_placement_snapshots")
+    .select("entity_id, publisher_platform, platform_position, impression_device, metric_key, value, captured_at")
+    .eq("workspace_id", workspaceId)
+    .in("entity_id", campaignRows.map((c) => c.external_id))
+    .gte("captured_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
+
+  if (!placementRows || placementRows.length === 0) return;
+
+  const opportunities: Array<{
+    related_campaign_external_id: string; related_segment_key: string; opportunity_type: string; title: string;
+    evidence: Record<string, unknown>; confidence: string;
+  }> = [];
+
+  for (const campaign of campaignRows) {
+    const segmentCtr = new Map<string, { value: number; capturedAt: string }>();
+    for (const row of placementRows) {
+      if (row.entity_id !== campaign.external_id || row.metric_key !== "ctr") continue;
+      const key = `${row.publisher_platform}|${row.platform_position}|${row.impression_device}`;
+      const existing = segmentCtr.get(key);
+      if (!existing || row.captured_at > existing.capturedAt) {
+        segmentCtr.set(key, { value: row.value, capturedAt: row.captured_at });
+      }
+    }
+
+    if (segmentCtr.size < 2) continue;
+
+    const values = Array.from(segmentCtr.values()).map((v) => v.value);
+    const avgCtr = values.reduce((s, v) => s + v, 0) / values.length;
+    const confidence = segmentCtr.size >= 6 ? "high" : segmentCtr.size >= 3 ? "medium" : "low";
+
+    for (const [key, point] of segmentCtr.entries()) {
+      if (point.value > avgCtr * 1.5) {
+        const [platform, position, device] = key.split("|");
+        opportunities.push({
+          related_campaign_external_id: campaign.external_id,
+          related_segment_key: key,
+          opportunity_type: "placement_outperforming",
+          title: `In "${campaign.name}", ${platform} ${position} on ${device} is significantly outperforming other placements`,
+          evidence: {
+            placement_ctr: Number(point.value.toFixed(2)), campaign_avg_ctr: Number(avgCtr.toFixed(2)),
+            publisher_platform: platform, platform_position: position, device, campaign_name: campaign.name,
+          },
+          confidence,
+        });
+      }
+    }
+  }
+
+  if (opportunities.length === 0) return;
+
+  const { error } = await supabase.from("opportunities").upsert(
+    opportunities.map((o) => ({ ...o, workspace_id: workspaceId, platform_account_id: platformAccountId, status: "open" })),
+    { onConflict: "platform_account_id,related_campaign_external_id,opportunity_type,related_segment_key" }
+  );
+
+  if (error) {
+    console.error(`[opportunities] failed to write detected placement opportunities for ${platformAccountId}:`, error.message);
+  }
+}

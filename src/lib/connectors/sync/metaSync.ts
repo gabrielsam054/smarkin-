@@ -348,5 +348,60 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     console.error(`[sync] breakdown fetch failed for platform_account ${job.platformAccountId}, continuing without it:`, err);
   }
 
+  // Real placement/device data — the second, separate breakdown
+  // compatibility group (age/gender above is the first). Conservative
+  // scope: publisher_platform + platform_position + impression_device
+  // is the well-documented "placement" combination. Country is
+  // deliberately NOT included here — combining it with these three in
+  // the same call is a less certain assumption, not worth risking the
+  // whole request over.
+  try {
+    const placementUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/act_${account.external_account_id}/insights`);
+    placementUrl.searchParams.set("access_token", accessToken);
+    placementUrl.searchParams.set("level", "campaign");
+    placementUrl.searchParams.set("fields", "campaign_id,impressions,clicks,spend,ctr");
+    placementUrl.searchParams.set("breakdowns", "publisher_platform,platform_position,impression_device");
+    placementUrl.searchParams.set("date_preset", job.jobClass === "backfill" ? "maximum" : "yesterday");
+
+    const placementRes = await fetch(placementUrl.toString());
+    if (placementRes.ok) {
+      const placementBody = await placementRes.json() as {
+        data: Array<{ campaign_id: string; publisher_platform?: string; platform_position?: string; impression_device?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }>
+      };
+
+      const placementSnapshots = placementBody.data.flatMap((row) => {
+        if (!row.publisher_platform || !row.platform_position || !row.impression_device) return [];
+        const metrics: Array<[string, string | undefined]> = [
+          ["impressions", row.impressions], ["clicks", row.clicks], ["spend", row.spend], ["ctr", row.ctr],
+        ];
+        return metrics
+          .filter(([, value]) => value !== undefined)
+          .map(([metricKey, value]) => ({
+            workspace_id: account.workspace_id,
+            platform_account_id: job.platformAccountId,
+            entity_id: row.campaign_id,
+            publisher_platform: row.publisher_platform!,
+            platform_position: row.platform_position!,
+            impression_device: row.impression_device!,
+            metric_key: metricKey,
+            value: Number(value),
+            captured_at: capturedAt,
+            source_window: sourceWindow,
+          }));
+      });
+
+      if (placementSnapshots.length > 0) {
+        const { error: placementInsertError } = await supabase.from("campaign_placement_snapshots").insert(placementSnapshots);
+        if (placementInsertError) {
+          console.error(`[sync] failed writing campaign_placement_snapshots for platform_account ${job.platformAccountId} (table may not exist yet):`, placementInsertError.message);
+        }
+      }
+    } else {
+      console.error(`[sync] placement fetch returned ${placementRes.status} for platform_account ${job.platformAccountId} — continuing without placement/device data this run.`);
+    }
+  } catch (err) {
+    console.error(`[sync] placement fetch failed for platform_account ${job.platformAccountId}, continuing without it:`, err);
+  }
+
   await recordSyncSuccess(job.platformAccountId);
 }

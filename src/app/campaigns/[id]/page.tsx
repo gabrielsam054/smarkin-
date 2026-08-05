@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, AlertCircle, Users, ListOrdered } from "lucide-react";
+import { ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, AlertCircle, Users, ListOrdered, MonitorSmartphone } from "lucide-react";
 import { requireUser } from "@/lib/auth/requireUser";
 import { isCurrentUserAdmin } from "@/lib/admin";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
@@ -29,11 +29,13 @@ const SEVERITY_MAP: Record<string, { label: string; className: string }> = {
   high_spend_low_ctr: { label: "High", className: "bg-destructive/10 text-destructive border-destructive/20" },
   high_ctr_low_spend: { label: "Medium", className: "bg-primary/10 text-primary border-primary/20" },
   audience_segment_outperforming: { label: "Medium", className: "bg-primary/10 text-primary border-primary/20" },
+  placement_outperforming: { label: "Medium", className: "bg-primary/10 text-primary border-primary/20" },
 };
 
 const TYPE_ICON: Record<string, typeof TrendingUp> = {
   high_ctr_low_spend: TrendingUp, high_spend_low_ctr: TrendingDown,
   zero_recent_activity: AlertCircle, audience_segment_outperforming: Users,
+  placement_outperforming: MonitorSmartphone,
 };
 
 /**

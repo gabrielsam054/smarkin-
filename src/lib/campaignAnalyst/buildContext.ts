@@ -11,7 +11,8 @@ export interface CampaignAnalystContext {
   accountAverages: { ctr: number | null; spend: number | null };
   openOpportunities: Array<{ title: string; evidence: Record<string, unknown>; confidence: string; type: string }>;
   audienceSegments: Array<{ ageRange: string; gender: string; ctr: number }>;
-  dataAvailability: { hasReach: boolean; hasFrequency: boolean; hasBudget: boolean; hasAudienceData: boolean; daysOfDailyHistory: number };
+  placementSegments: Array<{ publisherPlatform: string; platformPosition: string; device: string; ctr: number }>;
+  dataAvailability: { hasReach: boolean; hasFrequency: boolean; hasBudget: boolean; hasAudienceData: boolean; hasPlacementData: boolean; daysOfDailyHistory: number };
 }
 
 /**
@@ -80,6 +81,11 @@ export async function buildCampaignAnalystContext(
     .eq("workspace_id", workspaceId).eq("entity_id", campaign.external_id).eq("metric_key", "ctr")
     .order("captured_at", { ascending: false }).limit(20);
 
+  const { data: placementRows } = await supabase
+    .from("campaign_placement_snapshots").select("publisher_platform, platform_position, impression_device, value")
+    .eq("workspace_id", workspaceId).eq("entity_id", campaign.external_id).eq("metric_key", "ctr")
+    .order("captured_at", { ascending: false }).limit(20);
+
   const uniqueDays = new Set((dailySnapshots ?? []).map((s) => s.captured_at.slice(0, 10)));
 
   return {
@@ -94,10 +100,14 @@ export async function buildCampaignAnalystContext(
       title: o.title, evidence: o.evidence as Record<string, unknown>, confidence: o.confidence, type: o.opportunity_type,
     })),
     audienceSegments: (breakdownRows ?? []).map((b) => ({ ageRange: b.age_range, gender: b.gender, ctr: b.value })),
+    placementSegments: (placementRows ?? []).map((p) => ({
+      publisherPlatform: p.publisher_platform, platformPosition: p.platform_position, device: p.impression_device, ctr: p.value,
+    })),
     dataAvailability: {
       hasReach: "reach" in latestMetrics, hasFrequency: "frequency" in latestMetrics,
       hasBudget: campaign.daily_budget !== null || campaign.lifetime_budget !== null,
       hasAudienceData: (breakdownRows ?? []).length > 0,
+      hasPlacementData: (placementRows ?? []).length > 0,
       daysOfDailyHistory: uniqueDays.size,
     },
   };

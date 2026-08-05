@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ListChecks, TrendingUp, AlertCircle, TrendingDown, Users } from "lucide-react";
+import { ListChecks, TrendingUp, AlertCircle, TrendingDown, Users, MonitorSmartphone } from "lucide-react";
 import { requireUser } from "@/lib/auth/requireUser";
 import { isCurrentUserAdmin } from "@/lib/admin";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
@@ -22,6 +22,7 @@ const TYPE_ICON: Record<string, typeof TrendingUp> = {
   high_spend_low_ctr: TrendingDown,
   zero_recent_activity: AlertCircle,
   audience_segment_outperforming: Users,
+  placement_outperforming: MonitorSmartphone,
 };
 
 /**
