@@ -8,6 +8,7 @@ export interface CampaignHealth {
   cpc: MetricTrend; // derived: spend / clicks — real math on real synced numbers, not new data
   cpm: MetricTrend; // derived: spend / impressions * 1000
   spend: MetricTrend;
+  roas: MetricTrend; // derived: conversion_value / spend — only populated for campaigns with real purchase-tracking data
 }
 
 interface DailyPoint { date: string; value: number }
@@ -56,6 +57,7 @@ export function computeCampaignHealth(
   const clicksPoints = byMetric("clicks");
   const spendPoints = byMetric("spend");
   const ctrPoints = byMetric("ctr");
+  const conversionValuePoints = byMetric("conversion_value");
 
   // CPC/CPM are real derived metrics — genuine division on genuine
   // synced numbers, computed per real day, not a new data source.
@@ -65,11 +67,19 @@ export function computeCampaignHealth(
   const cpmPoints: DailyPoint[] = spendPoints
     .map((sp) => { const im = impressionsPoints.find((i) => i.date === sp.date); return im && im.value > 0 ? { date: sp.date, value: (sp.value / im.value) * 1000 } : null; })
     .filter((p): p is DailyPoint => p !== null);
+  // ROAS: only computed for days that have BOTH a real conversion_value
+  // and real spend — a campaign with no purchase tracking simply has
+  // no ROAS points at all, correctly surfacing as "insufficient_data"
+  // rather than a fabricated zero.
+  const roasPoints: DailyPoint[] = conversionValuePoints
+    .map((cv) => { const sp = spendPoints.find((s) => s.date === cv.date); return sp && sp.value > 0 ? { date: cv.date, value: cv.value / sp.value } : null; })
+    .filter((p): p is DailyPoint => p !== null);
 
   const ctr = trendFor(ctrPoints, true);
   const cpc = trendFor(cpcPoints, false); // lower CPC is better
   const cpm = trendFor(cpmPoints, false); // lower CPM is better
   const spend = trendFor(spendPoints, true); // treated as neutral-positive (more investment), not good/bad on its own
+  const roas = trendFor(roasPoints, true); // higher ROAS is better
 
   // Real, transparent composite — not a black box. Starts neutral,
   // moves only for metrics with genuine trend data; metrics still
@@ -77,11 +87,11 @@ export function computeCampaignHealth(
   // score returns null (not 50, not 0) if literally none of them have
   // enough real data yet — a fabricated default number would be worse
   // than admitting nothing can be scored yet.
-  const trends = [ctr, cpc, cpm];
+  const trends = [ctr, cpc, cpm, roas];
   const scored = trends.filter((t) => t.direction !== "insufficient_data");
   const healthScore = scored.length === 0 ? null : Math.max(0, Math.min(100,
     50 + scored.reduce((sum, t) => sum + (t.direction === "improving" ? 15 : t.direction === "declining" ? -15 : 0), 0)
   ));
 
-  return { healthScore, ctr, cpc, cpm, spend };
+  return { healthScore, ctr, cpc, cpm, spend, roas };
 }

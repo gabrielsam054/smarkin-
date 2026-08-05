@@ -132,7 +132,7 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   const insightsUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/act_${account.external_account_id}/insights`);
   insightsUrl.searchParams.set("access_token", accessToken);
   insightsUrl.searchParams.set("level", "campaign");
-  insightsUrl.searchParams.set("fields", "campaign_id,campaign_name,impressions,clicks,spend,ctr,reach,frequency");
+  insightsUrl.searchParams.set("fields", "campaign_id,campaign_name,impressions,clicks,spend,ctr,reach,frequency,actions,action_values");
   // The gap this closes: job.jobClass was carried through the entire
   // pipeline since Feature 10 and never read here — every sync,
   // including the explicitly-designed first "backfill" job, was
@@ -185,7 +185,11 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     throw new Error(`Meta Insights API returned ${res.status}`);
   }
 
-  const body = await res.json() as { data: Array<{ campaign_id: string; campaign_name?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string; reach?: string; frequency?: string }> };
+  const body = await res.json() as { data: Array<{
+    campaign_id: string; campaign_name?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string; reach?: string; frequency?: string;
+    actions?: Array<{ action_type: string; value: string }>;
+    action_values?: Array<{ action_type: string; value: string }>;
+  }> };
 
   const capturedAt = new Date().toISOString();
   // Tagged at write time, not reconstructed later — a backfill's
@@ -195,9 +199,21 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
   // where job.jobClass is unambiguous.
   const sourceWindow = job.jobClass === "backfill" ? "backfill_aggregate" : "daily";
   const snapshots = body.data.flatMap((row) => {
+    // Real conversion data, scoped honestly to "purchase" specifically —
+    // the most common conversion action, but not the only one Meta
+    // tracks. A campaign optimizing for leads or add-to-cart events
+    // would show no conversions here even if it's genuinely performing
+    // well against ITS actual goal — a real, disclosed scope limit, not
+    // a silent gap. Extending to other action types (matching the
+    // campaign's own objective field, already synced) is real,
+    // well-scoped future work, not attempted here.
+    const purchaseAction = row.actions?.find((a) => a.action_type === "purchase");
+    const purchaseValue = row.action_values?.find((a) => a.action_type === "purchase");
+
     const metrics: Array<[string, string | undefined]> = [
       ["impressions", row.impressions], ["clicks", row.clicks], ["spend", row.spend], ["ctr", row.ctr],
       ["reach", row.reach], ["frequency", row.frequency],
+      ["conversions", purchaseAction?.value], ["conversion_value", purchaseValue?.value],
     ];
     return metrics
       .filter(([, value]) => value !== undefined)

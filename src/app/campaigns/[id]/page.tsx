@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, AlertCircle, Users, ListOrdered, MonitorSmartphone } from "lucide-react";
+import { ArrowLeft, AlertTriangle, TrendingUp, TrendingDown, AlertCircle, Users, ListOrdered, MonitorSmartphone, ShoppingCart } from "lucide-react";
 import { requireUser } from "@/lib/auth/requireUser";
 import { isCurrentUserAdmin } from "@/lib/admin";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
@@ -27,6 +27,7 @@ function formatPercent(n: number | null): string {
 const SEVERITY_MAP: Record<string, { label: string; className: string }> = {
   zero_recent_activity: { label: "Critical", className: "bg-destructive/10 text-destructive border-destructive/20" },
   high_spend_low_ctr: { label: "High", className: "bg-destructive/10 text-destructive border-destructive/20" },
+  high_ctr_low_conversion: { label: "High", className: "bg-destructive/10 text-destructive border-destructive/20" },
   high_ctr_low_spend: { label: "Medium", className: "bg-primary/10 text-primary border-primary/20" },
   audience_segment_outperforming: { label: "Medium", className: "bg-primary/10 text-primary border-primary/20" },
   placement_outperforming: { label: "Medium", className: "bg-primary/10 text-primary border-primary/20" },
@@ -35,7 +36,7 @@ const SEVERITY_MAP: Record<string, { label: string; className: string }> = {
 const TYPE_ICON: Record<string, typeof TrendingUp> = {
   high_ctr_low_spend: TrendingUp, high_spend_low_ctr: TrendingDown,
   zero_recent_activity: AlertCircle, audience_segment_outperforming: Users,
-  placement_outperforming: MonitorSmartphone,
+  placement_outperforming: MonitorSmartphone, high_ctr_low_conversion: ShoppingCart,
 };
 
 /**
@@ -124,6 +125,8 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           <div><p className="text-xs text-text-muted mb-1">Spend</p><p className="text-lg font-semibold text-text-primary">{formatCurrency(latestByMetric.get("spend") ?? null)}</p></div>
           <div><p className="text-xs text-text-muted mb-1">CTR</p><p className="text-lg font-semibold text-text-primary">{formatPercent(latestByMetric.get("ctr") ?? null)}</p></div>
           <div><p className="text-xs text-text-muted mb-1">CPC</p><p className="text-lg font-semibold text-text-primary">{formatCurrency(health.cpc.current)}</p></div>
+          <div><p className="text-xs text-text-muted mb-1">Conversions</p><p className="text-lg font-semibold text-text-primary">{formatNumber(latestByMetric.get("conversions") ?? null)}</p></div>
+          <div><p className="text-xs text-text-muted mb-1">ROAS</p><p className="text-lg font-semibold text-text-primary">{health.roas.current !== null ? `${health.roas.current.toFixed(2)}x` : "—"}</p></div>
         </div>
 
         {dailyPacingPercent !== null && (

@@ -100,6 +100,31 @@ export async function detectOpportunities(
         confidence,
       });
     }
+
+    // Real, newly-achievable now that purchase-conversion data is
+    // synced: a campaign getting real clicks but zero real purchases.
+    // Requires at least 20 clicks before flagging — below that, zero
+    // conversions is completely normal statistical noise, not a real
+    // finding, and flagging it would be exactly the kind of
+    // small-sample overconfidence this system has avoided everywhere
+    // else. Honestly scoped to "purchase" conversions specifically —
+    // a campaign optimizing for leads or add-to-cart would show no
+    // conversions here even while performing well against its real goal.
+    const conversions = (snapshotRows ?? [])
+      .filter((s) => s.entity_id === c.externalId && s.metric_key === "conversions")
+      .sort((a, b) => b.captured_at.localeCompare(a.captured_at))[0]?.value ?? null;
+
+    if (conversions === 0 && (c.metrics.clicks ?? 0) >= 20) {
+      opportunities.push({
+        related_campaign_external_id: c.externalId,
+        opportunity_type: "high_ctr_low_conversion",
+        title: `"${c.name}" is getting real clicks but zero recorded purchases`,
+        evidence: {
+          clicks_7d: c.metrics.clicks, conversions_7d: 0, campaign_ctr: c.metrics.ctr !== null ? Number(c.metrics.ctr.toFixed(2)) : null,
+        },
+        confidence: (c.metrics.clicks ?? 0) >= 50 ? "high" : "medium",
+      });
+    }
   }
 
   if (opportunities.length === 0) return;

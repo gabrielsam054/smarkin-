@@ -48,6 +48,7 @@ Health score: ${context.health.healthScore ?? "insufficient data"}
 CTR trend: ${context.health.ctr.direction}${context.health.ctr.changePercent !== null ? ` (${context.health.ctr.changePercent}%)` : ""}
 CPC trend: ${context.health.cpc.direction}
 CPM trend: ${context.health.cpm.direction}
+ROAS trend: ${context.health.roas.direction}${context.health.roas.direction === "insufficient_data" ? " (no purchase-conversion data recorded for this campaign — either not enough history, or this campaign doesn't optimize for purchases)" : ""}
 
 Account averages (across all your campaigns, last 7 days): CTR ${context.accountAverages.ctr?.toFixed(2) ?? "unavailable"}, spend ${context.accountAverages.spend?.toFixed(2) ?? "unavailable"}
 
@@ -66,7 +67,7 @@ DATA AVAILABILITY — explicitly note these gaps in your limitations when releva
 - Days of real daily history: ${context.dataAvailability.daysOfDailyHistory}
 - Country/region breakdown: NEVER available in this system — always note if relevant
 - Creative data (headlines, images, video): NEVER available in this system — always note if relevant
-- Conversion/ROAS data: NEVER available in this system — always note if relevant
+- Conversion/ROAS data: only captured for "purchase" events specifically — a campaign optimizing for leads, add-to-cart, or other action types will show no conversion data here even if it's genuinely performing well against its real goal. Note this scope limit explicitly if the campaign's objective isn't purchase-related.
 
 USER QUESTION: ${question}`;
 }
