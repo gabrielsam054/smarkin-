@@ -3,6 +3,7 @@ import { decryptToken, encryptToken } from "@/lib/crypto/tokenEncryption";
 import { SyncJob } from "./queue";
 import { checkCircuitBreaker, recordSyncSuccess } from "./connectorHealth";
 import { metaConnector } from "../meta";
+import { fetchAllPages } from "../fetchAllPages";
 
 const GRAPH_API_VERSION = "v21.0";
 const REFRESH_BUFFER_MS = 24 * 60 * 60 * 1000; // refresh if expiring within 24h
@@ -189,7 +190,30 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     campaign_id: string; campaign_name?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string; reach?: string; frequency?: string;
     actions?: Array<{ action_type: string; value: string }>;
     action_values?: Array<{ action_type: string; value: string }>;
-  }> };
+  }>; paging?: { next?: string } };
+
+  // Real pagination for anything beyond page one — added here rather
+  // than replacing the whole request with the shared fetchAllPages
+  // helper, since the revoked-token detection above is deliberately
+  // tightly coupled to the FIRST request's specific error response;
+  // swapping it out would risk regressing that already-proven
+  // behavior. This only continues fetching if Meta actually indicates
+  // more pages exist — for a typical campaign-count sync, this loop
+  // usually never executes at all.
+  let nextPageUrl = body.paging?.next ?? null;
+  let pagesFetched = 1;
+  const MAX_INSIGHTS_PAGES = 10;
+  while (nextPageUrl && pagesFetched < MAX_INSIGHTS_PAGES) {
+    const pageRes = await fetch(nextPageUrl);
+    if (!pageRes.ok) {
+      console.error(`[sync] insights pagination returned ${pageRes.status} on page ${pagesFetched + 1} for platform_account ${job.platformAccountId} — stopping, keeping what was fetched so far.`);
+      break;
+    }
+    const pageBody = await pageRes.json() as { data: typeof body.data; paging?: { next?: string } };
+    body.data.push(...pageBody.data);
+    pagesFetched++;
+    nextPageUrl = pageBody.paging?.next ?? null;
+  }
 
   const capturedAt = new Date().toISOString();
   // Tagged at write time, not reconstructed later — a backfill's
@@ -258,18 +282,17 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     const budgetUrl = new URL(`https://graph.facebook.com/${GRAPH_API_VERSION}/act_${account.external_account_id}/campaigns`);
     budgetUrl.searchParams.set("access_token", accessToken);
     budgetUrl.searchParams.set("fields", "id,daily_budget,lifetime_budget,objective");
-    const budgetRes = await fetch(budgetUrl.toString());
-    if (budgetRes.ok) {
-      const budgetBody = await budgetRes.json() as { data: Array<{ id: string; daily_budget?: string; lifetime_budget?: string; objective?: string }> };
-      for (const c of budgetBody.data) {
-        budgetByCampaignId.set(c.id, {
-          dailyBudget: c.daily_budget ? Number(c.daily_budget) / 100 : null,
-          lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
-          objective: c.objective ?? null,
-        });
-      }
-    } else {
-      console.error(`[sync] budget fetch returned ${budgetRes.status} for platform_account ${job.platformAccountId} — campaign_entities will save without budget data this run.`);
+    budgetUrl.searchParams.set("limit", "100");
+
+    const campaignRows = await fetchAllPages<{ id: string; daily_budget?: string; lifetime_budget?: string; objective?: string }>(
+      budgetUrl.toString(), `budget fetch for platform_account ${job.platformAccountId}`
+    );
+    for (const c of campaignRows) {
+      budgetByCampaignId.set(c.id, {
+        dailyBudget: c.daily_budget ? Number(c.daily_budget) / 100 : null,
+        lifetimeBudget: c.lifetime_budget ? Number(c.lifetime_budget) / 100 : null,
+        objective: c.objective ?? null,
+      });
     }
   } catch (err) {
     // Best-effort, deliberately: budget is real, valuable enrichment,
@@ -324,41 +347,37 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     breakdownUrl.searchParams.set("fields", "campaign_id,impressions,clicks,spend,ctr");
     breakdownUrl.searchParams.set("breakdowns", "age,gender");
     breakdownUrl.searchParams.set("date_preset", job.jobClass === "backfill" ? "maximum" : "yesterday");
+    breakdownUrl.searchParams.set("limit", "100");
 
-    const breakdownRes = await fetch(breakdownUrl.toString());
-    if (breakdownRes.ok) {
-      const breakdownBody = await breakdownRes.json() as {
-        data: Array<{ campaign_id: string; age?: string; gender?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }>
-      };
+    const breakdownRows = await fetchAllPages<{ campaign_id: string; age?: string; gender?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }>(
+      breakdownUrl.toString(), `age/gender breakdown fetch for platform_account ${job.platformAccountId}`
+    );
 
-      const breakdownSnapshots = breakdownBody.data.flatMap((row) => {
-        if (!row.age || !row.gender) return []; // Meta can return an "unknown" bucket without these — skip rather than store a misleading blank segment
-        const metrics: Array<[string, string | undefined]> = [
-          ["impressions", row.impressions], ["clicks", row.clicks], ["spend", row.spend], ["ctr", row.ctr],
-        ];
-        return metrics
-          .filter(([, value]) => value !== undefined)
-          .map(([metricKey, value]) => ({
-            workspace_id: account.workspace_id,
-            platform_account_id: job.platformAccountId,
-            entity_id: row.campaign_id,
-            age_range: row.age!,
-            gender: row.gender!,
-            metric_key: metricKey,
-            value: Number(value),
-            captured_at: capturedAt,
-            source_window: sourceWindow,
-          }));
-      });
+    const breakdownSnapshots = breakdownRows.flatMap((row) => {
+      if (!row.age || !row.gender) return []; // Meta can return an "unknown" bucket without these — skip rather than store a misleading blank segment
+      const metrics: Array<[string, string | undefined]> = [
+        ["impressions", row.impressions], ["clicks", row.clicks], ["spend", row.spend], ["ctr", row.ctr],
+      ];
+      return metrics
+        .filter(([, value]) => value !== undefined)
+        .map(([metricKey, value]) => ({
+          workspace_id: account.workspace_id,
+          platform_account_id: job.platformAccountId,
+          entity_id: row.campaign_id,
+          age_range: row.age!,
+          gender: row.gender!,
+          metric_key: metricKey,
+          value: Number(value),
+          captured_at: capturedAt,
+          source_window: sourceWindow,
+        }));
+    });
 
-      if (breakdownSnapshots.length > 0) {
-        const { error: breakdownInsertError } = await supabase.from("campaign_breakdown_snapshots").insert(breakdownSnapshots);
-        if (breakdownInsertError) {
-          console.error(`[sync] failed writing campaign_breakdown_snapshots for platform_account ${job.platformAccountId} (table may not exist yet):`, breakdownInsertError.message);
-        }
+    if (breakdownSnapshots.length > 0) {
+      const { error: breakdownInsertError } = await supabase.from("campaign_breakdown_snapshots").insert(breakdownSnapshots);
+      if (breakdownInsertError) {
+        console.error(`[sync] failed writing campaign_breakdown_snapshots for platform_account ${job.platformAccountId} (table may not exist yet):`, breakdownInsertError.message);
       }
-    } else {
-      console.error(`[sync] breakdown fetch returned ${breakdownRes.status} for platform_account ${job.platformAccountId} — continuing without audience breakdown data this run.`);
     }
   } catch (err) {
     console.error(`[sync] breakdown fetch failed for platform_account ${job.platformAccountId}, continuing without it:`, err);
@@ -378,14 +397,14 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     placementUrl.searchParams.set("fields", "campaign_id,impressions,clicks,spend,ctr");
     placementUrl.searchParams.set("breakdowns", "publisher_platform,platform_position,impression_device");
     placementUrl.searchParams.set("date_preset", job.jobClass === "backfill" ? "maximum" : "yesterday");
+    placementUrl.searchParams.set("limit", "100");
 
-    const placementRes = await fetch(placementUrl.toString());
-    if (placementRes.ok) {
-      const placementBody = await placementRes.json() as {
-        data: Array<{ campaign_id: string; publisher_platform?: string; platform_position?: string; impression_device?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }>
-      };
+    const placementData = await fetchAllPages<{ campaign_id: string; publisher_platform?: string; platform_position?: string; impression_device?: string; impressions?: string; clicks?: string; spend?: string; ctr?: string }>(
+      placementUrl.toString(), `placement fetch for platform_account ${job.platformAccountId}`
+    );
 
-      const placementSnapshots = placementBody.data.flatMap((row) => {
+    {
+      const placementSnapshots = placementData.flatMap((row) => {
         if (!row.publisher_platform || !row.platform_position || !row.impression_device) return [];
         const metrics: Array<[string, string | undefined]> = [
           ["impressions", row.impressions], ["clicks", row.clicks], ["spend", row.spend], ["ctr", row.ctr],
@@ -412,8 +431,6 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
           console.error(`[sync] failed writing campaign_placement_snapshots for platform_account ${job.platformAccountId} (table may not exist yet):`, placementInsertError.message);
         }
       }
-    } else {
-      console.error(`[sync] placement fetch returned ${placementRes.status} for platform_account ${job.platformAccountId} — continuing without placement/device data this run.`);
     }
   } catch (err) {
     console.error(`[sync] placement fetch failed for platform_account ${job.platformAccountId}, continuing without it:`, err);
