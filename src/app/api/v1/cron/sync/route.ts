@@ -3,6 +3,7 @@ import { claimSyncJobs, markJobSucceeded, markJobFailed, enqueueNextIncrementalJ
 import { syncMetaCampaignInsights, CircuitOpenError } from "@/lib/connectors/sync/metaSync";
 import { recordSyncFailure } from "@/lib/connectors/sync/connectorHealth";
 import { detectOpportunities, detectAudienceOpportunities, detectPlacementOpportunities } from "@/lib/connectors/detectOpportunities";
+import { syncAdCreatives } from "@/lib/connectors/syncAdCreatives";
 import { buildServiceRoleClient } from "@/lib/supabase/serviceClient";
 
 /**
@@ -104,6 +105,11 @@ export async function GET(request: NextRequest) {
           await detectPlacementOpportunities(supabase, job.platformAccountId);
         } catch (err) {
           console.error(`[cron/sync] placement opportunity detection failed for ${job.platformAccountId}:`, err);
+        }
+        try {
+          await syncAdCreatives(supabase, job.platformAccountId);
+        } catch (err) {
+          console.error(`[cron/sync] ad creative sync failed for ${job.platformAccountId}:`, err);
         }
       }
     } catch (err) {

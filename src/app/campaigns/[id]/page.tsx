@@ -87,6 +87,14 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
     .eq("workspace_id", workspaceId).eq("related_campaign_external_id", campaign.external_id).eq("status", "open");
   const opportunities = opportunityRows ?? [];
 
+  // Real ad/creative data - the actual creatives Meta reports for this
+  // campaign, per the Creative Intelligence architecture discussion.
+  // Data layer only: no scoring, no fatigue detection yet.
+  const { data: adRows } = await supabase
+    .from("ad_entities").select("id, name, headline, body, image_url, thumbnail_url, cta_type, status")
+    .eq("campaign_entity_id", campaign.id);
+  const ads = adRows ?? [];
+
   const dailyPacingPercent = campaign.daily_budget && latestByMetric.get("spend") !== undefined
     ? Math.round(((latestByMetric.get("spend") ?? 0) / campaign.daily_budget) * 100)
     : null;
@@ -112,6 +120,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
             for THIS campaign — no dead link to "action plan" for a
             campaign with zero opportunities. */}
         <div className="flex gap-4 text-xs font-medium text-text-muted border-b border-border pb-3 -mt-1">
+          {ads.length > 0 && <a href="#creatives" className="hover:text-text-primary transition-colors">Creatives</a>}
           <a href="#diagnosis" className="hover:text-text-primary transition-colors">Diagnosis</a>
           {opportunities.length > 0 && <a href="#action-plan" className="hover:text-text-primary transition-colors">Action Plan</a>}
           <a href="#analyst" className="hover:text-text-primary transition-colors">Ask the Analyst</a>
@@ -146,6 +155,35 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
           <div><p className="text-xs text-text-muted mb-1">Conversions</p><p className="text-lg font-semibold text-text-primary">{formatNumber(latestByMetric.get("conversions") ?? null)}</p></div>
           <div><p className="text-xs text-text-muted mb-1">ROAS</p><p className="text-lg font-semibold text-text-primary">{health.roas.current !== null ? `${health.roas.current.toFixed(2)}x` : "—"}</p></div>
         </div>
+
+        {/* Real ad creatives — the marketer's actual ads, not just
+            campaign-level numbers. Image URLs are Meta's own CDN links,
+            stored directly (a disclosed tradeoff — see ad_entities
+            schema comment); if Meta didn't return one, this says so
+            honestly rather than showing a fabricated placeholder. */}
+        {ads.length > 0 && (
+          <div id="creatives">
+            <h2 className="text-sm font-semibold text-text-primary mb-3">Creatives</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {ads.map((ad) => (
+                <div key={ad.id} className="card overflow-hidden">
+                  {ad.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={ad.image_url} alt={ad.headline || ad.name || "Ad creative"} className="w-full aspect-square object-cover" />
+                  ) : (
+                    <div className="w-full aspect-square bg-surface-2 flex items-center justify-center px-3 text-center">
+                      <p className="text-[10px] text-text-muted">Creative preview is unavailable because this asset could not be retrieved from Meta.</p>
+                    </div>
+                  )}
+                  <div className="p-2.5">
+                    <p className="text-xs font-medium text-text-primary truncate">{ad.headline || ad.name || "Untitled ad"}</p>
+                    {ad.cta_type && <p className="text-[10px] text-text-muted mt-0.5">{ad.cta_type.replace(/_/g, " ")}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Real, earned delight — not manufactured enthusiasm. Only
             appears when the health score is genuinely high AND at
