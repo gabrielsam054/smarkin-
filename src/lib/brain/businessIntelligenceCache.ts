@@ -85,6 +85,16 @@ export async function getOrBuildBusinessIntelligence(
   const profile = gatherBusinessIntelligence(input);
 
   const writeStart = Date.now();
+  // TEMPORARY DIAGNOSTIC: the insert is failing RLS despite correct
+  // policies (user_id = auth.uid()), meaning auth.uid() may be
+  // resolving to null in this specific execution context — this
+  // function runs nested deep inside the Brain pipeline system, and
+  // Supabase's session-cookie context may not be surviving that async
+  // chain intact. Logging both values directly at the point of write
+  // to confirm or rule this out with real evidence, not a guess.
+  const { data: authCheck } = await supabase.auth.getUser();
+  console.error(`[BusinessIntelligenceCache][DIAGNOSTIC] userId param: ${userId} | auth.uid() via getUser(): ${authCheck?.user?.id ?? "NULL/no session"}`);
+
   // Explicit select-then-insert-or-update, not .upsert(). campaign_audiences
   // (the one other real upsert in this codebase) uses a single unified
   // "for all" RLS policy; this table uses three separate policies
