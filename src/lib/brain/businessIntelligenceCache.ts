@@ -48,8 +48,25 @@ export async function getOrBuildBusinessIntelligence(
 ): Promise<BusinessIntelligenceProfile> {
   const supabase = await createClient();
 
+  // TEMPORARY, MORE ROBUST DIAGNOSTIC: writes directly to a real table
+  // instead of console.error, since reliably finding the right Vercel
+  // log line has proven difficult across many attempts. This table has
+  // RLS disabled entirely, so a failure to write here would itself be
+  // real, informative evidence (e.g., a genuinely broken Supabase
+  // connection in this context), not just another log to search for.
+  async function debugLog(label: string, detail: string) {
+    try {
+      await supabase.from("temp_debug_log").insert({ label, detail });
+    } catch (e) {
+      // Even this failing is real information — but nothing more to do
+      // about it here.
+    }
+  }
+
+  await debugLog("function-entry", `userId param: ${userId}, productName: ${input.productName}`);
+
   const readStart = Date.now();
-  const { data: cached } = await supabase
+  const { data: cached, error: readError } = await supabase
     .from("business_intelligence_profiles")
     .select("*")
     .eq("user_id", userId)
@@ -57,6 +74,7 @@ export async function getOrBuildBusinessIntelligence(
     .maybeSingle<CachedProfile>();
   const readTime = Date.now() - readStart;
   safelyRecordCacheMetric(executionId, { readTime });
+  await debugLog("after-read", `cached: ${cached ? "found" : "null"}, readError: ${readError?.message ?? "none"}`);
 
   if (cached && cached.source_data_version === CURRENT_DATA_VERSION) {
     messageBus.publish("cache.hit", { executionId, productName: input.productName });
@@ -73,42 +91,31 @@ export async function getOrBuildBusinessIntelligence(
     } as BusinessIntelligenceProfile;
   }
 
-  // A version mismatch is a specific KIND of miss (something was cached,
-  // just for an older data version) — distinguished for diagnostics, not a
-  // new code path in the actual retrieval logic below, which is identical
-  // for both a true miss and a version mismatch.
   const isVersionMismatch = !!cached && cached.source_data_version !== CURRENT_DATA_VERSION;
   messageBus.publish("cache.miss", { executionId, productName: input.productName });
   safelyRecordCacheMetric(executionId, { hit: false, miss: true, versionMismatch: isVersionMismatch, rebuild: true });
 
-  // The untouched original — zero changes to its logic or output shape.
-  const profile = gatherBusinessIntelligence(input);
+  let profile: BusinessIntelligenceProfile;
+  try {
+    profile = gatherBusinessIntelligence(input);
+    await debugLog("after-gather", "gatherBusinessIntelligence succeeded");
+  } catch (gatherError) {
+    await debugLog("gather-EXCEPTION", gatherError instanceof Error ? gatherError.message : String(gatherError));
+    throw gatherError;
+  }
 
   const writeStart = Date.now();
-  // TEMPORARY DIAGNOSTIC: the insert is failing RLS despite correct
-  // policies (user_id = auth.uid()), meaning auth.uid() may be
-  // resolving to null in this specific execution context — this
-  // function runs nested deep inside the Brain pipeline system, and
-  // Supabase's session-cookie context may not be surviving that async
-  // chain intact. Logging both values directly at the point of write
-  // to confirm or rule this out with real evidence, not a guess.
-  const { data: authCheck } = await supabase.auth.getUser();
-  console.error(`[BusinessIntelligenceCache][DIAGNOSTIC] userId param: ${userId} | auth.uid() via getUser(): ${authCheck?.user?.id ?? "NULL/no session"}`);
 
-  // Explicit select-then-insert-or-update, not .upsert(). campaign_audiences
-  // (the one other real upsert in this codebase) uses a single unified
-  // "for all" RLS policy; this table uses three separate policies
-  // (select/insert/update), and I can't conclusively prove from static
-  // analysis alone that ON CONFLICT DO UPDATE composes safely with that
-  // policy shape — a real RLS violation was observed in production logs.
-  // Two simple operations, each already proven correct elsewhere in this
-  // codebase, replace one operation I can't fully verify.
-  const { data: existingRow } = await supabase
+  const { data: authCheck, error: authError } = await supabase.auth.getUser();
+  await debugLog("auth-check", `userId param: ${userId} | auth.uid(): ${authCheck?.user?.id ?? "NULL"} | authError: ${authError?.message ?? "none"}`);
+
+  const { data: existingRow, error: existingRowError } = await supabase
     .from("business_intelligence_profiles")
     .select("id")
     .eq("user_id", userId)
     .eq("product_name", input.productName)
     .maybeSingle();
+  await debugLog("existing-row-check", `existingRow: ${existingRow ? existingRow.id : "null"} | error: ${existingRowError?.message ?? "none"}`);
 
   const payload = {
     user_id: userId,
@@ -127,12 +134,9 @@ export async function getOrBuildBusinessIntelligence(
     ? await supabase.from("business_intelligence_profiles").update(payload).eq("id", existingRow.id)
     : await supabase.from("business_intelligence_profiles").insert(payload);
   safelyRecordCacheMetric(executionId, { writeTime: Date.now() - writeStart });
+  await debugLog("after-write", `writeError: ${error?.message ?? "none (success)"}`);
 
   if (error) {
-    // A cache write failure must never break the actual request — the
-    // profile was already computed correctly above and can still be
-    // returned; only future calls lose the benefit of the cache until the
-    // next successful write.
     console.error("[BusinessIntelligenceCache] Failed to persist profile:", error.message);
   }
 
