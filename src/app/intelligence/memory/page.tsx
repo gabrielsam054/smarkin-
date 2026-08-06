@@ -92,8 +92,8 @@ export default async function MemoryPage() {
             {enriched.map((e) => {
               const display = OUTCOME_DISPLAY[e.outcome] ?? OUTCOME_DISPLAY.too_early_to_tell;
               const Icon = display.icon;
-              return (
-                <div key={e.decision_result_id} className="card p-4">
+              const content = (
+                <>
                   <div className="flex items-start justify-between gap-3 mb-2">
                     <p className="text-sm font-semibold text-text-primary">
                       {e.request?.product_name || e.request?.industry || "Untitled decision"}
@@ -107,7 +107,12 @@ export default async function MemoryPage() {
                     <p className="text-xs text-text-muted mb-1">Recommended: {e.result.recommended_channel}</p>
                   )}
                   {e.notes && <p className="text-xs text-text-secondary mt-2 border-t border-border pt-2">{e.notes}</p>}
-                </div>
+                </>
+              );
+              return e.result?.request_id ? (
+                <Link key={e.decision_result_id} href={`/decision/${e.result.request_id}`} className="card p-4 block hover:border-border-strong transition-colors">{content}</Link>
+              ) : (
+                <div key={e.decision_result_id} className="card p-4">{content}</div>
               );
             })}
           </div>
