@@ -119,6 +119,7 @@ export default async function MarketingBrainPage() {
                   <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
                     <h2 className="text-base font-semibold text-text-primary">{p.product_name}</h2>
                     <div className="flex items-center gap-2">
+                      <Link href={`/blueprint/${encodeURIComponent(p.product_name)}`} className="text-xs font-medium text-primary hover:underline">Generate Blueprint</Link>
                       {p.product_profile?.matched && (
                         <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-primary bg-primary/10 border border-primary/20 rounded-full px-2.5 py-1">
                           <Sparkles size={11} />
