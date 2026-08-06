@@ -60,7 +60,7 @@ export const NAVIGATION: NavGroup[] = [
     items: [
       { label: "Marketing Brain", href: "/intelligence/brain", icon: Brain, status: "live" },
       { label: "Opportunities", href: "/intelligence/opportunities", icon: ListChecks, status: "live" },
-      { label: "Patterns", href: "/intelligence/patterns", icon: Fingerprint, status: "reserved" },
+      { label: "Patterns", href: "/intelligence/patterns", icon: Fingerprint, status: "live" },
       { label: "Memory", href: "/intelligence/memory", icon: BookOpen, status: "live" },
       { label: "Knowledge Graph", href: "/intelligence/graph", icon: Share2, status: "live" },
     ],
