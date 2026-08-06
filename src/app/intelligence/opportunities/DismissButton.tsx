@@ -8,7 +8,16 @@ export function DismissButton({ opportunityId }: { opportunityId: string }) {
   const [dismissing, setDismissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleDismiss() {
+  async function handleDismiss(e: React.MouseEvent) {
+    // Real fix for a real crash: this button now sits inside a Link
+    // (the campaign-link audit fix), so clicking it would otherwise
+    // also trigger navigation. Handled here, safely, since this
+    // component is already a real Client Component — the previous
+    // version tried to do this from a raw onClick wrapper defined
+    // directly in the Server Component page, which isn't valid at all
+    // and is what actually crashed the page.
+    e.preventDefault();
+    e.stopPropagation();
     setDismissing(true);
     setError(null);
     const result = await dismissOpportunity(opportunityId);

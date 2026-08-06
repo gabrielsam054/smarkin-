@@ -80,11 +80,7 @@ export default async function OpportunitiesPage() {
                   data={{ id: o.id, opportunityType: o.opportunity_type, title: o.title, evidence: o.evidence, confidence: o.confidence }}
                   badge={CONFIDENCE_BADGE[o.confidence]}
                   campaignHref={campaignId ? `/campaigns/${campaignId}` : undefined}
-                  action={
-                    <div onClick={(e) => e.preventDefault()}>
-                      <DismissButton opportunityId={o.id} />
-                    </div>
-                  }
+                  action={<DismissButton opportunityId={o.id} />}
                 />
               );
             })}
