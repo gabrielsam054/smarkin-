@@ -141,16 +141,24 @@ export default async function BlueprintPage({ params }: { params: Promise<{ prod
         {blueprint.platformRecommendations.length > 0 && (
           <div>
             <h2 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-1.5"><Layers size={14} className="text-text-muted" />Platform Recommendations</h2>
-            <div className="flex flex-col gap-2">
+            {/* Real bug found in live testing, fixed here: this
+                reasoning is genuinely industry-level in the underlying
+                data (channelSuitabilityDatabase has one Reasoning field
+                per industry, not per platform) — repeating it once per
+                platform made it look like a bug even though the
+                suitability scores themselves are real and genuinely
+                vary. Shown once, honestly labeled, rather than implying
+                each platform has its own distinct explanation it doesn't
+                actually have. */}
+            {blueprint.platformRecommendations[0]?.reasoning && (
+              <p className="text-xs text-text-secondary mb-2">{blueprint.platformRecommendations[0].reasoning}</p>
+            )}
+            <div className="flex flex-wrap gap-2">
               {blueprint.platformRecommendations.map((p, i) => (
-                <div key={i} className="card p-3">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className="text-sm font-medium text-text-primary">{p.platform}</p>
-                    <span className="text-[10px] font-mono text-text-muted">{p.suitability}% suitability</span>
-                  </div>
-                  <p className="text-xs text-text-secondary">{p.reasoning}</p>
-                  {p.recommendedObjectives.length > 0 && <p className="text-[11px] text-text-muted mt-1">Objectives: {p.recommendedObjectives.join(", ")}</p>}
-                </div>
+                <span key={i} className="text-xs bg-surface-2 border border-border rounded-full px-2.5 py-1">
+                  <span className="font-medium text-text-primary">{p.platform}</span>
+                  <span className="text-text-muted ml-1 font-mono">{p.suitability}%</span>
+                </span>
               ))}
             </div>
           </div>
