@@ -136,7 +136,13 @@ export async function detectOpportunities(
   // segment-level ones (that's detectAudienceOpportunities below) —
   // matching the constraint's real shape now that it accounts for both.
   const { error } = await supabase.from("opportunities").upsert(
-    opportunities.map((o) => ({ ...o, workspace_id: workspaceId, platform_account_id: platformAccountId, status: "open", related_segment_key: null })),
+    // Real fix for a real, active bug: NULL was used here previously,
+    // but Postgres never treats two NULL values as equal in a unique
+    // constraint — meaning the onConflict clause below never actually
+    // matched an existing row, and every single sync run inserted a
+    // fresh duplicate instead of updating in place. Empty string
+    // satisfies equality correctly, closing this permanently.
+    opportunities.map((o) => ({ ...o, workspace_id: workspaceId, platform_account_id: platformAccountId, status: "open", related_segment_key: "" })),
     { onConflict: "platform_account_id,related_campaign_external_id,opportunity_type,related_segment_key" }
   );
 
