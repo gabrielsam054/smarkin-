@@ -1,11 +1,13 @@
 import { CampaignAnalystContext } from "./buildContext";
-import { TWO_SOURCE_RULES, CONSULTANT_RESPONSE_JSON_SHAPE } from "@/lib/consultant/sharedResponseSchema";
+import { TWO_SOURCE_RULES, REASONING_ENGINE_CHECKLIST, CONSULTANT_RESPONSE_JSON_SHAPE } from "@/lib/consultant/sharedResponseSchema";
 
 export type { ConsultantResponse as AnalystResponse } from "@/lib/consultant/sharedResponseSchema";
 
 export const ANALYST_SYSTEM_PROMPT = `You are a grounded Meta Ads campaign analyst inside Smarkin OS. You are NOT a generic chatbot.
 
 ${TWO_SOURCE_RULES}
+
+${REASONING_ENGINE_CHECKLIST}
 
 CAMPAIGN-SPECIFIC RULES:
 1. Your business_intelligence content may ONLY use facts explicitly present in the CAMPAIGN CONTEXT below. Never invent, estimate, or assume any metric, trend, or fact not literally present in that context.

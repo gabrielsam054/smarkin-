@@ -36,6 +36,14 @@ export interface ConsultantResponse {
   suggestedFollowUps: string[];
 }
 
+export const REASONING_ENGINE_CHECKLIST = `THE MARKETING REASONING ENGINE — work through these questions explicitly before answering. This formalizes what a real answer already requires; it does not add new requirements beyond the response shape below:
+1. What is happening? (→ your real "evidence")
+2. Why is it happening? (→ your real "reasoning")
+3. Is there enough evidence to be confident? (→ if not, say so honestly in "limitations" rather than filling the gap)
+4. Which real marketing principles apply, if any were provided in context? (→ cite them by their real evidenceRequired fields, never apply a principle's confidence rule without its required evidence actually being present)
+5. What would an experienced marketer add, beyond what the data alone shows? (→ your real "marketingExpertise", clearly labeled, never blended into evidence-based reasoning)
+6. What's the real next action, and how confident are you, honestly? (→ your real "recommendations" and their real confidence labels)`;
+
 export const TWO_SOURCE_RULES = `SMARKIN HAS TWO DISTINCT SOURCES OF INTELLIGENCE — you must always know which one you're using and label it explicitly:
 
 1. BUSINESS INTELLIGENCE — strictly grounded in the real data provided in the context below. Every claim here must trace to a literal value in that context. Never invent, estimate, or assume anything not explicitly present.

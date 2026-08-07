@@ -1,10 +1,12 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { computeCampaignHealth } from "@/lib/connectors/campaignHealth";
+import { getAllPrinciples, MarketingPrinciple } from "./marketingPrinciples";
 
 export interface DiagnosisContext {
   hasConnectedAccount: boolean;
   decliningCampaigns: Array<{ name: string; ctrChangePercent: number | null }>;
   problemFindings: Array<{ title: string; confidence: string; evidence: Record<string, unknown> }>;
+  relevantPrinciples: MarketingPrinciple[];
 }
 
 // The real, disclosed subset of opportunity types that represent an
@@ -26,7 +28,7 @@ export async function buildDiagnosisContext(supabase: SupabaseClient, workspaceI
     .from("platform_accounts").select("id").eq("workspace_id", workspaceId).eq("status", "active");
 
   if (!accounts || accounts.length === 0) {
-    return { hasConnectedAccount: false, decliningCampaigns: [], problemFindings: [] };
+    return { hasConnectedAccount: false, decliningCampaigns: [], problemFindings: [], relevantPrinciples: [] };
   }
 
   const { data: campaignRows } = await supabase
@@ -55,9 +57,12 @@ export async function buildDiagnosisContext(supabase: SupabaseClient, workspaceI
     .eq("workspace_id", workspaceId).eq("status", "open")
     .in("opportunity_type", PROBLEM_OPPORTUNITY_TYPES);
 
+  const relevantPrinciples = await getAllPrinciples(supabase);
+
   return {
     hasConnectedAccount: true,
     decliningCampaigns,
     problemFindings: (opportunities ?? []).map((o) => ({ title: o.title, confidence: o.confidence, evidence: o.evidence as Record<string, unknown> })),
+    relevantPrinciples,
   };
 }
