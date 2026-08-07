@@ -177,7 +177,7 @@ export async function buildCampaignAnalystContext(
   const { data: pastRecommendationRows } = await supabase
     .from("campaign_analyst_recommendations")
     .select("id, question, recommendations")
-    .eq("campaign_entity_id", campaign.id)
+    .eq("campaign_entity_id", campaignEntityId)
     .order("created_at", { ascending: false })
     .limit(5);
 
