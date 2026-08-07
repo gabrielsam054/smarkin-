@@ -4,6 +4,8 @@ import { Users, Target, MessageSquare, Layers, CheckSquare, TrendingUp, AlertTri
 import { requireUser } from "@/lib/auth/requireUser";
 import { isCurrentUserAdmin } from "@/lib/admin";
 import { assembleBlueprint } from "@/lib/blueprint/assembleBlueprint";
+import { persistBlueprintRecommendation, getPastBlueprintOutcomes } from "@/lib/blueprint/blueprintLearning";
+import { BlueprintOutcomeReporter } from "./BlueprintOutcomeReporter";
 import { AppShell } from "@/components/layout/AppShell";
 
 /**
@@ -50,6 +52,17 @@ export default async function BlueprintPage({ params }: { params: Promise<{ prod
     );
   }
 
+  // Real Learning gap closed here — the same proven pattern already
+  // used for Campaign Intelligence. A write failure must never break
+  // the page itself; blueprintId is simply null if it fails, and the
+  // reporter UI just doesn't render.
+  const blueprintId = await persistBlueprintRecommendation(
+    supabase, user.id, productName,
+    blueprint.recommendedMessaging?.positioning ?? null,
+    blueprint.primaryAudiences[0]?.name ?? null,
+  );
+  const pastOutcomes = await getPastBlueprintOutcomes(supabase, user.id, productName);
+
   return (
     <AppShell firstName={firstName} initials={firstName.charAt(0).toUpperCase()} isAdmin={!!isAdmin} activeLabel="Campaigns">
       <div className="max-w-3xl mx-auto px-4 sm:px-8 py-8 flex flex-col gap-6">
@@ -62,6 +75,25 @@ export default async function BlueprintPage({ params }: { params: Promise<{ prod
         <div className="rounded-lg border border-border bg-surface-2 px-4 py-3 text-xs text-text-secondary">
           This is a planning document, not a live campaign — nothing here has been sent to Meta. Take this into Meta Ads Manager yourself to actually create and launch the campaign.
         </div>
+
+        {/* Real Learning gap closed — genuine past outcomes for this
+            product, only shown when a real one exists. */}
+        {pastOutcomes.length > 0 && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+            <p className="text-[10px] font-mono uppercase tracking-wide text-primary mb-2">What&apos;s worked before for this product</p>
+            <div className="flex flex-col gap-1.5">
+              {pastOutcomes.map((o, i) => (
+                <p key={i} className="text-xs text-text-secondary">
+                  {o.positioning && `"${o.positioning.slice(0, 60)}${o.positioning.length > 60 ? "…" : ""}"`}
+                  {" — "}
+                  <span className={o.outcome === "worked" ? "text-primary font-medium" : o.outcome === "did_not_work" ? "text-destructive font-medium" : "text-text-muted"}>
+                    {o.outcome === "worked" ? "worked" : o.outcome === "did_not_work" ? "didn't work" : "too early to tell"}
+                  </span>
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Personas — real, from Customer Research */}
         {blueprint.personas.length > 0 && (
@@ -204,6 +236,12 @@ export default async function BlueprintPage({ params }: { params: Promise<{ prod
             </ul>
           </div>
         </div>
+
+        {blueprintId && (
+          <div className="border-t border-border pt-4">
+            <BlueprintOutcomeReporter blueprintId={blueprintId} />
+          </div>
+        )}
 
         {(blueprint.customerGaps.length > 0 || blueprint.audienceGaps.length > 0) && (
           <div className="border-t border-border pt-4">
