@@ -160,7 +160,7 @@ export async function buildCampaignAnalystContext(
   // Research found no persona, but the static graph has a real,
   // 99%-confidence "Build Muscle" goal edge). The cached graph
   // traversal is the more reliable source to query against.
-  let knowledgeGraphConnections: CampaignAnalystContext["knowledgeGraphConnections"] = [];
+  const knowledgeGraphConnections: CampaignAnalystContext["knowledgeGraphConnections"] = [];
   const cachedGraphProfile = linkedProfile?.knowledge_graph_profile as { connectedGoals?: string[] } | null;
   if (cachedGraphProfile?.connectedGoals) {
     for (const goal of cachedGraphProfile.connectedGoals) {
