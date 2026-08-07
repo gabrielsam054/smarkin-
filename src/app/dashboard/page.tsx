@@ -145,6 +145,38 @@ export default async function DashboardPage() {
           </p>
         </div>
 
+        {/* Real stat-card summary row — same visual idea as the
+            reference mockup, but every number here is real: total
+            spend is a genuine sum of real daily snapshots, the counts
+            are real opportunity/health tallies. Deliberately no
+            "Potential Impact: $X" card — that would require predictive
+            modeling this system doesn't have (see Decision #008). */}
+        {briefing?.hasConnectedAccount && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+            <div className="card p-4">
+              <p className="text-xs text-text-muted mb-1">Spend (7d)</p>
+              <p className="text-lg font-semibold text-text-primary">
+                {briefing.totalSpend7d !== null ? `$${briefing.totalSpend7d.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+              </p>
+            </div>
+            <div className="card p-4">
+              <p className="text-xs text-text-muted mb-1">Ready to scale</p>
+              <p className="text-lg font-semibold text-text-primary">{briefing.readyToScaleCount}</p>
+              <p className="text-[10px] text-text-muted mt-0.5">real, high-CTR findings</p>
+            </div>
+            <div className="card p-4">
+              <p className="text-xs text-text-muted mb-1">Need attention</p>
+              <p className={`text-lg font-semibold ${briefing.criticalCount > 0 ? "text-destructive" : "text-text-primary"}`}>{briefing.criticalCount}</p>
+            </div>
+            <div className="card p-4">
+              <p className="text-xs text-text-muted mb-1">Trending</p>
+              <p className="text-lg font-semibold text-text-primary">
+                <span className="text-primary">{briefing.campaignsImproving}↑</span> <span className="text-text-muted">{briefing.campaignsDeclining}↓</span>
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ── Daily Briefing — real synthesis, not fabricated ──── */}
         {briefing?.hasConnectedAccount && briefing.openOpportunityCount > 0 && (
           <div className="card p-5 mb-6">
@@ -171,7 +203,12 @@ export default async function DashboardPage() {
               return (
                 <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 mb-3">
                   <p className="text-[10px] font-mono uppercase tracking-wide text-primary mb-1.5">Recommended focus</p>
-                  <p className="text-sm text-text-primary mb-2">{top.title}</p>
+                  <p className="text-sm text-text-primary mb-1">{top.title}</p>
+                  {top.evidence && (
+                    <p className="text-[11px] text-text-muted font-mono mb-2">
+                      {Object.entries(top.evidence).filter(([k]) => k !== "campaign_name").slice(0, 3).map(([k, v]) => `${k.replace(/_/g, " ")}: ${typeof v === "number" ? v.toFixed(2) : v}`).join(" · ")}
+                    </p>
+                  )}
                   {campaignId && (
                     <Link href={`/campaigns/${campaignId}?askAbout=${encodeURIComponent(top.title)}#analyst`}
                       className="text-xs font-semibold text-primary hover:underline">
