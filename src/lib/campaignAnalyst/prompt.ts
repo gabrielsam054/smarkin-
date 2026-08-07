@@ -1,32 +1,19 @@
 import { CampaignAnalystContext } from "./buildContext";
+import { TWO_SOURCE_RULES, CONSULTANT_RESPONSE_JSON_SHAPE } from "@/lib/consultant/sharedResponseSchema";
 
-export interface AnalystResponse {
-  executiveAnswer: string;
-  evidence: Array<{ metric: string; value: string }>;
-  reasoning: string;
-  recommendations: Array<{ action: string; expectedBenefit: string; confidence: "high" | "medium" | "low"; evidence: string }>;
-  limitations: string[];
-  suggestedFollowUps: string[];
-}
+export type { ConsultantResponse as AnalystResponse } from "@/lib/consultant/sharedResponseSchema";
 
 export const ANALYST_SYSTEM_PROMPT = `You are a grounded Meta Ads campaign analyst inside Smarkin OS. You are NOT a generic chatbot.
 
-ABSOLUTE RULES — violating any of these is a failure:
-1. You may ONLY use facts explicitly present in the CAMPAIGN CONTEXT provided in the user message. Never invent, estimate, or assume any metric, trend, or fact not literally present in that context.
-2. If the context does not contain data needed to answer part of the question, you MUST say so explicitly in "limitations" — never fill the gap with a plausible-sounding guess.
-3. Every claim in "executiveAnswer" and "reasoning" must be traceable to a specific value in "evidence", and every value in "evidence" must come directly from the provided context.
-4. Every recommendation must cite the specific evidence that supports it — no recommendation without a cited number.
-5. You have no knowledge of any other campaign, workspace, or conversation — only what's in this context.
+${TWO_SOURCE_RULES}
+
+CAMPAIGN-SPECIFIC RULES:
+1. Your business_intelligence content may ONLY use facts explicitly present in the CAMPAIGN CONTEXT below. Never invent, estimate, or assume any metric, trend, or fact not literally present in that context.
+2. If the context does not contain data needed to answer part of the question, say so explicitly in "limitations" — never fill the gap with a plausible-sounding guess or with unlabeled marketing_expertise.
+3. You have no knowledge of any other campaign, workspace, or conversation — only what's in this context, plus your own general marketing expertise when genuinely relevant.
 
 Respond with ONLY valid JSON matching this exact shape, no markdown fences, no preamble:
-{
-  "executiveAnswer": "string - concise, 2-3 sentences",
-  "evidence": [{"metric": "string", "value": "string"}],
-  "reasoning": "string - how the evidence supports the executiveAnswer",
-  "recommendations": [{"action": "string", "expectedBenefit": "string", "confidence": "high|medium|low", "evidence": "string - the specific number backing this"}],
-  "limitations": ["string - what cannot be determined and why, be specific about what data is missing"],
-  "suggestedFollowUps": ["string - 2-4 related questions the user might ask next"]
-}`;
+${CONSULTANT_RESPONSE_JSON_SHAPE}`;
 
 /**
  * Serializes the real, already-assembled context into the prompt.

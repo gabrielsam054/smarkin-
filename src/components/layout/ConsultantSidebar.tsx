@@ -34,7 +34,8 @@ export function ConsultantSidebar({
   connectors: SidebarConnectorStatus[];
 }) {
   const [question, setQuestion] = useState("");
-  const [chatResponse, setChatResponse] = useState<string | null>(null);
+  const [chatResponse, setChatResponse] = useState<{ executiveAnswer: string; marketingExpertise: string | null; dataSource: string; routedTo: string } | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   const [asking, setAsking] = useState(false);
 
   async function handleAsk(e: React.FormEvent) {
@@ -42,6 +43,7 @@ export function ConsultantSidebar({
     if (!question.trim() || asking) return;
     setAsking(true);
     setChatResponse(null);
+    setChatError(null);
     try {
       const res = await fetch("/api/v1/consultant", {
         method: "POST",
@@ -49,17 +51,16 @@ export function ConsultantSidebar({
         body: JSON.stringify({ question: question.trim() }),
       });
       const body = await res.json().catch(() => ({}));
-      if (body.outOfScope) {
-        setChatResponse(body.message);
-      } else if (!res.ok) {
-        setChatResponse(body.error ?? "Something went wrong.");
+      if (!res.ok) {
+        setChatError(body.error ?? "Something went wrong.");
       } else {
-        // Real, grounded answer — either campaign-specific or an
-        // account summary, both using the same structured format.
-        setChatResponse(`${body.executiveAnswer}${body.routedTo ? ` (based on ${body.routedTo})` : ""}`);
+        // Real Option C structure — every response now carries an
+        // honest dataSource label, so the sidebar can show which kind
+        // of intelligence actually produced the answer.
+        setChatResponse({ executiveAnswer: body.executiveAnswer, marketingExpertise: body.marketingExpertise ?? null, dataSource: body.dataSource, routedTo: body.routedTo });
       }
     } catch {
-      setChatResponse("Something went wrong asking the consultant.");
+      setChatError("Something went wrong asking the consultant.");
     } finally {
       setAsking(false);
       setQuestion("");
@@ -105,7 +106,19 @@ export function ConsultantSidebar({
           />
           <button type="submit" disabled={asking} className="text-xs font-semibold bg-primary text-primary-foreground rounded-lg px-2.5 hover:bg-primary-dim transition-colors disabled:opacity-50">{asking ? "…" : "Ask"}</button>
         </form>
-        {chatResponse && <p className="text-[11px] text-text-muted mt-2 leading-relaxed">{chatResponse}</p>}
+        {chatError && <p className="text-[11px] text-destructive mt-2 leading-relaxed">{chatError}</p>}
+        {chatResponse && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            <p className="text-[11px] text-text-secondary leading-relaxed">{chatResponse.executiveAnswer}</p>
+            {chatResponse.marketingExpertise && (
+              <div className="rounded-md bg-surface-1 border border-border px-2 py-1.5">
+                <p className="text-[9px] font-semibold text-text-muted uppercase tracking-wide mb-0.5">General guidance — not from your data</p>
+                <p className="text-[11px] text-text-secondary leading-relaxed">{chatResponse.marketingExpertise}</p>
+              </div>
+            )}
+            <p className="text-[10px] text-text-muted">via {chatResponse.routedTo}</p>
+          </div>
+        )}
       </div>
 
       {/* Quick Actions - real routes only, no placeholder buttons */}

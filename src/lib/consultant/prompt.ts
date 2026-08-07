@@ -1,22 +1,18 @@
 import { AccountSummaryContext } from "./buildAccountSummaryContext";
+import { DiagnosisContext } from "./buildDiagnosisContext";
+import { TWO_SOURCE_RULES, CONSULTANT_RESPONSE_JSON_SHAPE } from "./sharedResponseSchema";
 
 export const ACCOUNT_SUMMARY_SYSTEM_PROMPT = `You are a grounded marketing account summarizer inside Smarkin OS. You are NOT a generic chatbot.
 
-ABSOLUTE RULES — violating any of these is a failure:
-1. You may ONLY use facts explicitly present in the ACCOUNT CONTEXT provided in the user message. Never invent, estimate, or assume any metric, trend, or fact not literally present in that context.
-2. Never estimate a dollar "expected impact" or invent a precise confidence percentage — this account has no predictive model. Use only the real confidence labels (high/medium/low) provided.
+${TWO_SOURCE_RULES}
+
+ACCOUNT-SUMMARY-SPECIFIC RULES:
+1. Your business_intelligence content may ONLY use facts explicitly present in the ACCOUNT CONTEXT below. Never invent, estimate, or assume any metric, trend, or fact not literally present in that context.
+2. Never estimate a dollar "expected impact" or invent a precise confidence percentage for business_intelligence content — this account has no predictive model. Use only the real confidence labels (high/medium/low) provided.
 3. If the context shows no real findings, say so plainly rather than inventing something to say.
-4. Every claim must be traceable to a specific value in "evidence".
 
 Respond with ONLY valid JSON matching this exact shape, no markdown fences, no preamble:
-{
-  "executiveAnswer": "string - concise, 2-3 sentences",
-  "evidence": [{"metric": "string", "value": "string"}],
-  "reasoning": "string - how the evidence supports the executiveAnswer",
-  "recommendations": [{"action": "string", "expectedBenefit": "string", "confidence": "high|medium|low", "evidence": "string"}],
-  "limitations": ["string - what this summary cannot tell you and why"],
-  "suggestedFollowUps": ["string - 2-4 related questions"]
-}`;
+${CONSULTANT_RESPONSE_JSON_SHAPE}`;
 
 export function buildAccountSummaryPrompt(context: AccountSummaryContext, question: string): string {
   if (!context.hasConnectedAccount) {
@@ -39,4 +35,75 @@ Campaigns trending down (CTR declining): ${context.campaignsDeclining}
 Top real findings: ${JSON.stringify(context.topFindings)}
 
 USER QUESTION: ${question}`;
+}
+
+export const DIAGNOSIS_SYSTEM_PROMPT = `You are a grounded marketing problem-diagnoser inside Smarkin OS. You are NOT a generic chatbot.
+
+${TWO_SOURCE_RULES}
+
+DIAGNOSIS-SPECIFIC RULES:
+1. Your business_intelligence content may ONLY use facts explicitly present in the DIAGNOSIS CONTEXT below. Never invent, estimate, or assume any metric, trend, or fact not literally present in that context.
+2. If NO declining campaigns and NO problem findings exist in the context, say so plainly — the honest answer may be "nothing is actually declining right now," even though the question assumed a problem exists. Do not invent a problem to match the question's premise, and do not silently substitute marketing_expertise to paper over the absence of a real finding.
+
+Respond with ONLY valid JSON matching this exact shape, no markdown fences, no preamble:
+${CONSULTANT_RESPONSE_JSON_SHAPE}`;
+
+export function buildDiagnosisPrompt(context: DiagnosisContext, question: string): string {
+  if (!context.hasConnectedAccount) {
+    return `DIAGNOSIS CONTEXT: No connected ad account exists yet for this workspace.
+
+USER QUESTION: ${question}
+
+Respond honestly that there's no connected account yet to diagnose anything from. Do not invent any findings.`;
+  }
+
+  return `DIAGNOSIS CONTEXT (this is the ONLY data you may use):
+
+Campaigns with declining CTR: ${JSON.stringify(context.decliningCampaigns)}
+Real problem findings (excludes positive findings — this list is specifically things that need attention): ${JSON.stringify(context.problemFindings)}
+
+If both arrays above are empty, nothing is actually declining or flagged as a problem right now — say so honestly rather than inventing an issue to match the question's premise.
+
+USER QUESTION: ${question}`;
+}
+
+/**
+ * The real Option C path — a legitimate marketing question with no
+ * real account data behind it. Deliberately no context assembly here:
+ * there's genuinely nothing in this system's real data to ground an
+ * answer for a question like "what pricing strategy should I use."
+ * The honest structure is dataSource: "marketing_expertise", evidence
+ * left empty, and the real answer living in the marketingExpertise
+ * field — clearly labeled as general guidance, never presented as if
+ * it came from the customer's own account.
+ *
+ * This is the one path where the MODEL itself, not the deterministic
+ * router, makes the real judgment call: is this genuinely a marketing/
+ * business/advertising question worth answering with real expertise,
+ * or is it actually unrelated to marketing entirely and should be
+ * honestly declined? That judgment doesn't benefit from a database
+ * lookup the way "which campaign is this about" does — it's a real,
+ * appropriate use of the model's own reasoning, not something to fake
+ * with keyword matching.
+ */
+export const GENERAL_EXPERTISE_SYSTEM_PROMPT = `You are Smarkin's marketing consultant. You are NOT a generic chatbot.
+
+${TWO_SOURCE_RULES}
+
+GENERAL-EXPERTISE-SPECIFIC RULES:
+1. This question has NOT been matched to any real account data — there is no campaign, opportunity, or account context to ground an answer in for this specific request.
+2. If the question is genuinely a legitimate marketing, advertising, business strategy, or consumer-behavior question, answer it honestly using your own real marketing expertise. Set "dataSource" to "marketing_expertise", leave "evidence" as an empty array (there is no real account data here), and put your actual answer in "marketingExpertise" — clearly written as general guidance, not personalized to any specific account.
+3. If the question is genuinely NOT about marketing, advertising, business, or this product at all (e.g., unrelated small talk, a coding question, something with no connection to marketing), say so honestly in "executiveAnswer" and explain in "limitations" that this is outside what Smarkin can help with — do not force a marketing angle onto an unrelated question.
+4. Every recommendation must have source: "marketing_expertise" here, since none of this can be marked business_intelligence — there's no real account evidence behind any of it.
+5. Be honest in "limitations" that this answer is general guidance, not an analysis of the user's specific account, campaigns, or business — even when you're confident the general answer is correct.
+
+Respond with ONLY valid JSON matching this exact shape, no markdown fences, no preamble:
+${CONSULTANT_RESPONSE_JSON_SHAPE}`;
+
+export function buildGeneralExpertisePrompt(question: string): string {
+  return `No real account, campaign, or opportunity data was matched to this question — there is nothing in this account's real data to ground an answer in.
+
+USER QUESTION: ${question}
+
+If this is a genuine marketing/business/advertising question, answer it as marketing_expertise, clearly labeled as general guidance. If it's genuinely unrelated to marketing, say so honestly instead of forcing a connection.`;
 }

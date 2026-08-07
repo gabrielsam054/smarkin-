@@ -6,9 +6,11 @@ import { SUGGESTED_QUESTIONS } from "@/lib/campaignAnalyst/prompt";
 
 interface AnalystResponse {
   executiveAnswer: string;
+  dataSource: "business_intelligence" | "marketing_expertise" | "combined";
   evidence: Array<{ metric: string; value: string }>;
   reasoning: string;
-  recommendations: Array<{ action: string; expectedBenefit: string; confidence: string; evidence: string }>;
+  marketingExpertise: string | null;
+  recommendations: Array<{ action: string; expectedBenefit: string; confidence: string; evidence: string; source: "business_intelligence" | "marketing_expertise" }>;
   limitations: string[];
   suggestedFollowUps: string[];
 }
@@ -61,12 +63,13 @@ export function CampaignAnalyst({ campaignId, exportData, initialQuestion }: { c
         "",
         `**Answer:** ${response.executiveAnswer}`,
         "",
-        "**Evidence:** " + response.evidence.map((e) => `${e.metric}: ${e.value}`).join(", "),
+        "**Evidence (from your account):** " + (response.evidence.length > 0 ? response.evidence.map((e) => `${e.metric}: ${e.value}`).join(", ") : "none"),
         "",
-        `**Reasoning:** ${response.reasoning}`,
+        response.reasoning ? `**Reasoning:** ${response.reasoning}` : "",
+        response.marketingExpertise ? `\n**General marketing expertise (not from your account data):** ${response.marketingExpertise}` : "",
         "",
         "**Recommendations:**",
-        ...response.recommendations.map((r) => `- ${r.action} (${r.confidence} confidence) — ${r.evidence}`),
+        ...response.recommendations.map((r) => `- ${r.action} (${r.confidence} confidence, ${r.source === "business_intelligence" ? "your data" : "general guidance"}) — ${r.evidence}`),
         "",
         "**Limitations:**",
         ...response.limitations.map((l) => `- ${l}`),
@@ -176,17 +179,30 @@ export function CampaignAnalyst({ campaignId, exportData, initialQuestion }: { c
 
           {response.evidence.length > 0 && (
             <div>
-              <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Evidence</p>
+              <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Evidence — from your account</p>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-secondary font-mono">
                 {response.evidence.map((e, i) => <span key={i}>{e.metric}: {e.value}</span>)}
               </div>
             </div>
           )}
 
-          <div>
-            <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Reasoning</p>
-            <p className="text-sm text-text-secondary">{response.reasoning}</p>
-          </div>
+          {response.reasoning && (
+            <div>
+              <p className="text-xs font-semibold text-text-muted uppercase tracking-wide mb-2">Reasoning</p>
+              <p className="text-sm text-text-secondary">{response.reasoning}</p>
+            </div>
+          )}
+
+          {/* Real, visually distinct — Option C's actual implementation.
+              Never rendered inside the same block as evidence-based
+              reasoning, so it can never be mistaken for a finding
+              derived from the account's own data. */}
+          {response.marketingExpertise && (
+            <div className="rounded-lg border border-border bg-surface-2 p-3">
+              <p className="text-[10px] font-semibold text-text-muted uppercase tracking-wide mb-1.5">General marketing expertise — not from your account data</p>
+              <p className="text-sm text-text-secondary">{response.marketingExpertise}</p>
+            </div>
+          )}
 
           {response.recommendations.length > 0 && (
             <div>
@@ -200,6 +216,9 @@ export function CampaignAnalyst({ campaignId, exportData, initialQuestion }: { c
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <p className="text-sm font-medium text-text-primary">{r.action}</p>
                       <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-full bg-surface-2 border border-border text-text-muted">{r.confidence} confidence</span>
+                      <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded-full border ${r.source === "business_intelligence" ? "bg-primary/10 text-primary border-primary/20" : "bg-surface-2 text-text-muted border-border"}`}>
+                        {r.source === "business_intelligence" ? "your data" : "general guidance"}
+                      </span>
                     </div>
                     <p className="text-xs text-text-secondary mb-1">{r.expectedBenefit}</p>
                     <p className="text-[11px] text-text-muted font-mono">{r.evidence}</p>

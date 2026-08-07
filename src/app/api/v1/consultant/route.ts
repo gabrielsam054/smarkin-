@@ -3,21 +3,30 @@ import { requireUser } from "@/lib/auth/requireUser";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
 import { classifyIntent } from "@/lib/consultant/classifyIntent";
 import { buildAccountSummaryContext } from "@/lib/consultant/buildAccountSummaryContext";
-import { ACCOUNT_SUMMARY_SYSTEM_PROMPT, buildAccountSummaryPrompt } from "@/lib/consultant/prompt";
+import { buildDiagnosisContext } from "@/lib/consultant/buildDiagnosisContext";
+import {
+  ACCOUNT_SUMMARY_SYSTEM_PROMPT, buildAccountSummaryPrompt,
+  DIAGNOSIS_SYSTEM_PROMPT, buildDiagnosisPrompt,
+  GENERAL_EXPERTISE_SYSTEM_PROMPT, buildGeneralExpertisePrompt,
+} from "@/lib/consultant/prompt";
 import { buildCampaignAnalystContext } from "@/lib/campaignAnalyst/buildContext";
 import { ANALYST_SYSTEM_PROMPT, buildAnalystPrompt } from "@/lib/campaignAnalyst/prompt";
 import { callClaude } from "@/lib/claude";
 
 /**
- * The real, first version of the account-wide AI Consultant. Per the
- * explicit architectural decision to route natural-language questions
- * to the right internal engine automatically — but scoped honestly to
- * what can actually be routed reliably today. Two real intents,
- * handled deterministically, not by an AI guess at where to route.
- * Everything else declines honestly, naming what it can actually help
- * with, rather than fabricating an answer no engine here actually
- * supports (e.g., "should I sell in Ghana or Nigeria" has no real
- * engine behind it yet — this correctly says so).
+ * The real, Option C version of the account-wide AI Consultant.
+ * Smarkin has two distinct forms of intelligence — Business
+ * Intelligence (grounded in this account's real data) and Marketing
+ * Expertise (general knowledge, honestly labeled as such) — and every
+ * response makes clear which one produced which part of the answer.
+ * See sharedResponseSchema.ts for the real structural implementation.
+ *
+ * Four real, deterministically-routed intents. Routing itself never
+ * guesses which internal engine to trust — only the fourth path
+ * (general_marketing_expertise) lets the model itself judge whether a
+ * question is genuinely about marketing, since that's a real judgment
+ * call that doesn't benefit from a database lookup the way "which
+ * campaign is this" does.
  */
 export async function POST(request: NextRequest) {
   const { user, supabase } = await requireUser("/dashboard");
@@ -35,27 +44,32 @@ export async function POST(request: NextRequest) {
 
   const intent = await classifyIntent(supabase, workspaceId, question);
 
-  if (intent.type === "out_of_scope") {
-    // Real, honest decline — no AI call at all, since there's nothing
-    // real to ground an answer in for whatever this question actually
-    // asked. Names what genuinely does exist rather than a vague apology.
-    return NextResponse.json({
-      outOfScope: true,
-      message: "I can currently help with two things: questions about a specific campaign (mention its name), or a summary of what needs attention across your account today. For anything else, this capability doesn't exist yet — check Marketing Brain, Opportunities, or Decisions directly for now.",
-    });
-  }
-
   try {
     let raw: string;
+    let routedTo: string;
+
     if (intent.type === "campaign_specific") {
       const context = await buildCampaignAnalystContext(supabase, user.id, workspaceId, intent.campaignEntityId);
       if (!context) {
         return NextResponse.json({ error: "Couldn't find that campaign's data." }, { status: 404 });
       }
       raw = await callClaude({ system: ANALYST_SYSTEM_PROMPT, prompt: buildAnalystPrompt(context, question), maxTokens: 2500 });
-    } else {
+      routedTo = intent.campaignName;
+    } else if (intent.type === "campaign_diagnosis") {
+      const context = await buildDiagnosisContext(supabase, workspaceId);
+      raw = await callClaude({ system: DIAGNOSIS_SYSTEM_PROMPT, prompt: buildDiagnosisPrompt(context, question), maxTokens: 2500 });
+      routedTo = "campaign diagnosis";
+    } else if (intent.type === "account_summary") {
       const context = await buildAccountSummaryContext(supabase, workspaceId);
       raw = await callClaude({ system: ACCOUNT_SUMMARY_SYSTEM_PROMPT, prompt: buildAccountSummaryPrompt(context, question), maxTokens: 2500 });
+      routedTo = "account summary";
+    } else {
+      // general_marketing_expertise — deliberately no context assembly;
+      // there's genuinely no real account data to ground this in. The
+      // model itself decides, honestly, whether to answer with real
+      // marketing expertise or decline as genuinely unrelated.
+      raw = await callClaude({ system: GENERAL_EXPERTISE_SYSTEM_PROMPT, prompt: buildGeneralExpertisePrompt(question), maxTokens: 2500 });
+      routedTo = "general marketing expertise";
     }
 
     const cleaned = raw.replace(/^```json\s*|```\s*$/g, "").trim();
@@ -70,7 +84,7 @@ export async function POST(request: NextRequest) {
       }, { status: 502 });
     }
 
-    return NextResponse.json({ ...(parsed as object), routedTo: intent.type === "campaign_specific" ? intent.campaignName : "account summary" });
+    return NextResponse.json({ ...(parsed as object), routedTo });
   } catch (err) {
     console.error("[consultant] Claude call failed:", err);
     return NextResponse.json({ error: "The consultant is temporarily unavailable. Please try again shortly." }, { status: 503 });
