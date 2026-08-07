@@ -35,16 +35,35 @@ export function ConsultantSidebar({
 }) {
   const [question, setQuestion] = useState("");
   const [chatResponse, setChatResponse] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
 
-  function handleAsk(e: React.FormEvent) {
+  async function handleAsk(e: React.FormEvent) {
     e.preventDefault();
-    if (!question.trim()) return;
-    // Honest, not faked: no account-wide context builder exists yet —
-    // this doesn't pretend to answer using intelligence that isn't
-    // actually there. Campaign-specific analysis (the real Campaign
-    // Analyst) already exists and is linked to directly below.
-    setChatResponse("Account-wide AI Consultant coming soon. Campaign-specific analysis is already available — open any campaign and ask the Analyst there.");
-    setQuestion("");
+    if (!question.trim() || asking) return;
+    setAsking(true);
+    setChatResponse(null);
+    try {
+      const res = await fetch("/api/v1/consultant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: question.trim() }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (body.outOfScope) {
+        setChatResponse(body.message);
+      } else if (!res.ok) {
+        setChatResponse(body.error ?? "Something went wrong.");
+      } else {
+        // Real, grounded answer — either campaign-specific or an
+        // account summary, both using the same structured format.
+        setChatResponse(`${body.executiveAnswer}${body.routedTo ? ` (based on ${body.routedTo})` : ""}`);
+      }
+    } catch {
+      setChatResponse("Something went wrong asking the consultant.");
+    } finally {
+      setAsking(false);
+      setQuestion("");
+    }
   }
 
   return (
@@ -84,7 +103,7 @@ export function ConsultantSidebar({
             placeholder="Ask me anything…"
             className="flex-1 text-xs bg-surface border border-border rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-primary/50"
           />
-          <button type="submit" className="text-xs font-semibold bg-primary text-primary-foreground rounded-lg px-2.5 hover:bg-primary-dim transition-colors">Ask</button>
+          <button type="submit" disabled={asking} className="text-xs font-semibold bg-primary text-primary-foreground rounded-lg px-2.5 hover:bg-primary-dim transition-colors disabled:opacity-50">{asking ? "…" : "Ask"}</button>
         </form>
         {chatResponse && <p className="text-[11px] text-text-muted mt-2 leading-relaxed">{chatResponse}</p>}
       </div>
