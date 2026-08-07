@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sparkles, Loader2, AlertTriangle, ListChecks, HelpCircle, Download } from "lucide-react";
 import { SUGGESTED_QUESTIONS } from "@/lib/campaignAnalyst/prompt";
 
@@ -28,7 +28,7 @@ export interface ExportableCampaignData {
  * evidence, reasoning, recommendations, limitations) — never just the
  * headline claim with the supporting structure hidden or omitted.
  */
-export function CampaignAnalyst({ campaignId, exportData }: { campaignId: string; exportData: ExportableCampaignData }) {
+export function CampaignAnalyst({ campaignId, exportData, initialQuestion }: { campaignId: string; exportData: ExportableCampaignData; initialQuestion?: string }) {
   const [question, setQuestion] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +104,18 @@ export function CampaignAnalyst({ campaignId, exportData }: { campaignId: string
       setLoading(false);
     }
   }
+
+  // The real "Review already knows what I'm looking at" behavior — an
+  // opportunity clicked on the Opportunities page lands here with the
+  // relevant question already asked, not just a pre-filled box waiting
+  // for the user to hit submit themselves. Runs once, only when a real
+  // initialQuestion was actually passed in.
+  useEffect(() => {
+    if (initialQuestion) {
+      ask(initialQuestion);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div id="analyst">

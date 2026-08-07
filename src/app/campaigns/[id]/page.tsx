@@ -46,7 +46,8 @@ const SEVERITY_MAP: Record<string, { label: string; className: string }> = {
  * both reuse the SAME real, already-stored Opportunities for this
  * campaign — not a second, parallel detection system.
  */
-export default async function CampaignDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CampaignDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ askAbout?: string }> }) {
+  const { askAbout } = await searchParams;
   const { id } = await params;
   const { user, supabase } = await requireUser(`/campaigns/${id}`);
   const [{ data: profile }, isAdmin] = await Promise.all([
@@ -262,6 +263,7 @@ export default async function CampaignDetailPage({ params }: { params: Promise<{
 
         <CampaignAnalyst
           campaignId={campaign.id}
+          initialQuestion={askAbout ? `You flagged this: "${askAbout}" — what should I actually do about it?` : undefined}
           exportData={{
             campaignName: campaign.name,
             healthScore: health.healthScore,
