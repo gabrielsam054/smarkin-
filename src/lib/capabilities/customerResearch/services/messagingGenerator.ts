@@ -41,14 +41,26 @@ export function generateMessaging(
   const productAwareStage = journeyStages.find(s => s.stage === "Product Aware");
   const mostAwareStage = journeyStages.find(s => s.stage === "Most Aware");
 
-  const ctaRecommendations = journeyStages.map(s => s.recommendedCTA).filter((c): c is string => !!c);
+  // Real fix, found via live Alpha testing: each CTA genuinely belongs
+  // to a specific funnel stage, but showing them as a flat, unlabeled
+  // list made a real progression look like an undifferentiated dump.
+  // Labeling each one with its real stage, not changing the underlying
+  // data - same fix pattern already proven for the platform reasoning
+  // display bug.
+  const ctaRecommendations = journeyStages
+    .filter(s => !!s.recommendedCTA)
+    .map(s => `${s.recommendedCTA} (${s.stage} stage)`);
   const emotionalTriggers = [...new Set(COPY_ANGLES.map(r => str(r["Emotion"])).filter(Boolean))];
 
   return {
     recommendedMessaging: {
       headlineIdeas,
-      offerAngle: productAwareStage?.keyMessage ?? null,
-      positioning: mostAwareStage?.keyMessage ?? null,
+      // Same honesty fix: these are real funnel-stage psychological
+      // objectives from the reference data, not finished product copy -
+      // labeled as such rather than presented as if they were specific
+      // to this product.
+      offerAngle: productAwareStage?.keyMessage ? `${productAwareStage.keyMessage} (Product Aware stage framing)` : null,
+      positioning: mostAwareStage?.keyMessage ? `${mostAwareStage.keyMessage} (Most Aware stage framing)` : null,
       ctaRecommendations,
     },
     emotionalTriggers,
