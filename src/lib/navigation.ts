@@ -1,14 +1,29 @@
 import {
-  LayoutDashboard, Users, Target, FileText, Compass, Megaphone,
-  Brain, ListChecks, Fingerprint, BookOpen, Share2, Plug, Settings, Archive,
+  LayoutDashboard, FileText, Megaphone, Plug, Settings, Archive,
   LucideIcon,
 } from "lucide-react";
 
 /**
- * Single source of truth for the sidebar. Matches the UX Spec v1.0
- * information architecture exactly — grouping by task (Research,
- * Advertising) with one deliberate exception (Intelligence, which
- * groups by engine on purpose, per the spec's stated reasoning).
+ * Single source of truth for the sidebar. Collapsed per the explicit
+ * architectural decision: Smarkin is one AI Marketing Consultant, not
+ * a collection of tools — internal intelligence engines (Marketing
+ * Brain, Opportunities, Patterns, Memory, Knowledge Graph, Decisions,
+ * Customer/Audience Research) remain fully real, working pages in the
+ * codebase, independently testable, just no longer primary navigation
+ * items. The AI Consultant (the right-side panel on Mission Control)
+ * now orchestrates them via /api/v1/consultant.
+ *
+ * This collapse only happened once a real blocking reason was
+ * resolved: the consultant's old hard decline used to point users
+ * by name to these exact pages ("check Marketing Brain, Opportunities,
+ * or Decisions directly") — hiding them while that message still
+ * existed would have been a real, immediate contradiction. Option C
+ * removed that hard decline entirely, so the contradiction no longer
+ * applies.
+ *
+ * Meta Ads Interest Finder is deliberately NOT grouped as an internal
+ * engine — per the Constitution, it remains a first-class, visible
+ * product in its own right.
  *
  * status drives real UI behavior, not decoration:
  *  - "live"     : normal nav item, fully clickable
@@ -41,33 +56,10 @@ export const NAVIGATION: NavGroup[] = [
     ],
   },
   {
-    label: "Research",
+    label: null,
     items: [
-      { label: "Customer Research", href: "/research/new", icon: Users, status: "live" },
-      { label: "Audience Research", href: "/audience/new", icon: Target, status: "live" },
-      { label: "Reports", href: "/reports", icon: FileText, status: "live" },
-    ],
-  },
-  {
-    label: "Advertising",
-    items: [
-      { label: "Decisions", href: "/decision/new", icon: Compass, status: "live" },
       { label: "Campaigns", href: "/campaigns", icon: Megaphone, status: "live" },
-    ],
-  },
-  {
-    label: "Intelligence",
-    items: [
-      { label: "Marketing Brain", href: "/intelligence/brain", icon: Brain, status: "live" },
-      { label: "Opportunities", href: "/intelligence/opportunities", icon: ListChecks, status: "live" },
-      { label: "Patterns", href: "/intelligence/patterns", icon: Fingerprint, status: "live" },
-      { label: "Memory", href: "/intelligence/memory", icon: BookOpen, status: "live" },
-      { label: "Knowledge Graph", href: "/intelligence/graph", icon: Share2, status: "live" },
-    ],
-  },
-  {
-    label: "Legacy",
-    items: [
+      { label: "Reports", href: "/reports", icon: FileText, status: "live" },
       { label: "Meta Ads Interest Finder", href: "/analysis/new", icon: Archive, status: "live" },
     ],
   },
@@ -79,3 +71,16 @@ export const NAVIGATION: NavGroup[] = [
     ],
   },
 ];
+
+// Every internal-engine page still exists and is still fully real and
+// reachable directly by URL - only removed from primary navigation.
+// Kept here as a real reference, not a dead list, so a future
+// developer (or future Claude) can find them without guessing:
+//   /research/new           - Customer Research
+//   /audience/new           - Audience Research
+//   /decision/new           - Decisions
+//   /intelligence/brain     - Marketing Brain
+//   /intelligence/opportunities - Opportunities
+//   /intelligence/patterns  - Patterns
+//   /intelligence/memory    - Memory
+//   /intelligence/graph     - Knowledge Graph
