@@ -1,5 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { buildDailyBriefing } from "@/lib/dailyBriefing";
+import { getPlaybookByName, MarketingPlaybook } from "./marketingPlaybooks";
 
 export interface AccountSummaryContext {
   hasConnectedAccount: boolean;
@@ -10,6 +11,7 @@ export interface AccountSummaryContext {
   campaignsImproving: number;
   campaignsDeclining: number;
   topFindings: Array<{ title: string; confidence: string; evidence: Record<string, unknown> }>;
+  scalingPlaybook: MarketingPlaybook | null;
 }
 
 /**
@@ -22,6 +24,9 @@ export interface AccountSummaryContext {
  */
 export async function buildAccountSummaryContext(supabase: SupabaseClient, workspaceId: string): Promise<AccountSummaryContext> {
   const briefing = await buildDailyBriefing(supabase, workspaceId);
+  // Only fetched when there's a genuine, real signal to scale — no
+  // point loading a playbook that has nothing to attach to.
+  const scalingPlaybook = briefing.readyToScaleCount > 0 ? await getPlaybookByName(supabase, "Scale Winning Campaign") : null;
   return {
     hasConnectedAccount: briefing.hasConnectedAccount,
     totalSpend7d: briefing.totalSpend7d,
@@ -31,5 +36,6 @@ export async function buildAccountSummaryContext(supabase: SupabaseClient, works
     campaignsImproving: briefing.campaignsImproving,
     campaignsDeclining: briefing.campaignsDeclining,
     topFindings: briefing.topPriorities.map((p) => ({ title: p.title, confidence: p.confidence, evidence: p.evidence })),
+    scalingPlaybook,
   };
 }

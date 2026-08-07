@@ -31,6 +31,7 @@ Total spend, last 7 real days: ${context.totalSpend7d !== null ? `$${context.tot
 Open opportunities: ${context.openOpportunityCount}
 Critical findings (zero recent activity): ${context.criticalCount}
 Ready-to-scale findings (high CTR, low spend): ${context.readyToScaleCount}
+${context.scalingPlaybook ? `Relevant playbook for scaling (use its recommendedActions and their real confidenceRule — check real sample size before treating a scale recommendation as high confidence): ${JSON.stringify(context.scalingPlaybook)}` : ""}
 Campaigns trending up (CTR improving): ${context.campaignsImproving}
 Campaigns trending down (CTR declining): ${context.campaignsDeclining}
 
@@ -68,6 +69,8 @@ Real problem findings (excludes positive findings — this list is specifically 
 
 Relevant marketing principles (from the shared Principles source — cite these by their real evidence requirements, don't restate them as your own general knowledge): ${JSON.stringify(context.relevantPrinciples)}
 If a principle's evidenceRequired fields aren't actually present in the context above, do not apply that principle's confidenceRule as if the evidence existed — say so honestly in limitations instead.
+
+Relevant playbook (a real, structured consultant workflow for this exact problem type — use its likelyCauses and recommendedActions as a starting structure, but only cite a likely cause if its confirmingEvidence is actually present in the context above, and only apply a recommended action's confidenceRule honestly): ${JSON.stringify(context.playbook)}
 
 If both arrays above are empty, nothing is actually declining or flagged as a problem right now — say so honestly rather than inventing an issue to match the question's premise.
 
