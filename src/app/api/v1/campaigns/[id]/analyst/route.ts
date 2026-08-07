@@ -4,6 +4,7 @@ import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
 import { buildCampaignAnalystContext } from "@/lib/campaignAnalyst/buildContext";
 import { ANALYST_SYSTEM_PROMPT, buildAnalystPrompt, AnalystResponse } from "@/lib/campaignAnalyst/prompt";
 import { callClaude } from "@/lib/claude";
+import { persistCampaignRecommendation } from "@/lib/consultant/persistCampaignRecommendation";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      console.error("[campaign-analyst] model returned unparseable JSON:", raw.slice(0, 500));
+      console.error(`[campaign-analyst] model returned unparseable JSON (length: ${raw.length}):`, raw);
       // A response that doesn't end with a closing brace was very
       // likely cut off mid-generation (a real, confirmed failure mode
       // found via live testing) rather than a genuinely malformed
@@ -68,7 +69,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ error: "The analyst's response was malformed. Please try again." }, { status: 502 });
     }
 
-    return NextResponse.json(parsed);
+    // Real Learning gap closed here — persisted so a future response
+    // for this same campaign can reference whether this recommendation
+    // actually worked. A write failure here must never break the
+    // response itself; recommendationId is simply null if it fails.
+    const recommendationId = await persistCampaignRecommendation(
+      supabase, user.id, id, body.question.trim(), parsed.recommendations, "campaign detail page",
+    );
+
+    return NextResponse.json({ ...parsed, recommendationId });
   } catch (err) {
     console.error("[campaign-analyst] Claude call failed:", err);
     return NextResponse.json({ error: "The analyst is temporarily unavailable. Please try again shortly." }, { status: 503 });

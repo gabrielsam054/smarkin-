@@ -50,6 +50,9 @@ Placement/device segments (publisher platform, position, device CTR, if any): ${
 Past decisions made about this same business, with their real reported outcomes (if any): ${JSON.stringify(context.pastDecisionOutcomes)}
 ${context.pastDecisionOutcomes.length > 0 ? "If relevant to the question, reference this real history explicitly — e.g. \"last time a similar recommendation was made, the reported outcome was X.\" Never claim history exists if this array is empty." : ""}
 
+Past recommendations made specifically about THIS campaign, with real reported outcomes where available (outcome is null if never reported): ${JSON.stringify(context.pastCampaignRecommendations)}
+If a past recommendation here has a real, non-null outcome and it's relevant to the current question, cite it explicitly — e.g. "last time I recommended X, you reported it worked/didn't work." Never claim an outcome exists for a past recommendation where outcome is null.
+
 Real customer personas for this business, if researched (name and primary goal): ${JSON.stringify(context.personas)}
 Real Knowledge Graph connections for these personas' goals (source, relationship, target, confidence) — if any exist, they represent a real, evidence-backed edge relevant to this business; cite them by name if genuinely relevant to the question, never invent a connection not present here: ${JSON.stringify(context.knowledgeGraphConnections)}
 

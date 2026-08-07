@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Sparkles, Loader2, AlertTriangle, ListChecks, HelpCircle, Download } from "lucide-react";
+import { Sparkles, Loader2, AlertTriangle, ListChecks, HelpCircle, Download, ThumbsUp, ThumbsDown, Clock } from "lucide-react";
 import { SUGGESTED_QUESTIONS } from "@/lib/campaignAnalyst/prompt";
+import { reportCampaignRecommendationOutcome } from "./analystActions";
 
 interface AnalystResponse {
   executiveAnswer: string;
@@ -13,6 +14,7 @@ interface AnalystResponse {
   recommendations: Array<{ action: string; expectedBenefit: string; confidence: string; evidence: string; source: "business_intelligence" | "marketing_expertise" }>;
   limitations: string[];
   suggestedFollowUps: string[];
+  recommendationId: string | null;
 }
 
 export interface ExportableCampaignData {
@@ -35,6 +37,16 @@ export function CampaignAnalyst({ campaignId, exportData, initialQuestion }: { c
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<AnalystResponse | null>(null);
+  const [outcomeReported, setOutcomeReported] = useState(false);
+  const [reportingOutcome, setReportingOutcome] = useState(false);
+
+  async function handleReportOutcome(outcome: "worked" | "did_not_work" | "too_early_to_tell") {
+    if (!response?.recommendationId || reportingOutcome) return;
+    setReportingOutcome(true);
+    const result = await reportCampaignRecommendationOutcome(response.recommendationId, outcome);
+    setReportingOutcome(false);
+    if (!result.error) setOutcomeReported(true);
+  }
 
   // Real client-side export — no PDF library added to the app, no
   // server round-trip needed. Includes the actual data already on the
@@ -91,6 +103,7 @@ export function CampaignAnalyst({ campaignId, exportData, initialQuestion }: { c
     setLoading(true);
     setError(null);
     setResponse(null);
+    setOutcomeReported(false);
     try {
       const res = await fetch(`/api/v1/campaigns/${campaignId}/analyst`, {
         method: "POST",
@@ -225,6 +238,31 @@ export function CampaignAnalyst({ campaignId, exportData, initialQuestion }: { c
                   </div>
                 ))}
               </div>
+
+              {/* Real Learning gap closed here — reporting an outcome
+                  feeds directly back into pastCampaignRecommendations
+                  for this same campaign's next question. */}
+              {response.recommendationId && (
+                outcomeReported ? (
+                  <p className="text-xs text-primary mt-2">Thanks — this will inform future recommendations for this campaign.</p>
+                ) : (
+                  <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border">
+                    <p className="text-[11px] text-text-muted">Did this work?</p>
+                    <button type="button" disabled={reportingOutcome} onClick={() => handleReportOutcome("worked")}
+                      className="text-[11px] flex items-center gap-1 text-text-secondary hover:text-primary transition-colors disabled:opacity-50">
+                      <ThumbsUp size={11} /> Worked
+                    </button>
+                    <button type="button" disabled={reportingOutcome} onClick={() => handleReportOutcome("did_not_work")}
+                      className="text-[11px] flex items-center gap-1 text-text-secondary hover:text-destructive transition-colors disabled:opacity-50">
+                      <ThumbsDown size={11} /> Didn&apos;t work
+                    </button>
+                    <button type="button" disabled={reportingOutcome} onClick={() => handleReportOutcome("too_early_to_tell")}
+                      className="text-[11px] flex items-center gap-1 text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50">
+                      <Clock size={11} /> Too early
+                    </button>
+                  </div>
+                )
+              )}
             </div>
           )}
 

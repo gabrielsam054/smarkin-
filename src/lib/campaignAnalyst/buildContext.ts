@@ -16,6 +16,7 @@ export interface CampaignAnalystContext {
   audienceSegments: Array<{ ageRange: string; gender: string; ctr: number }>;
   placementSegments: Array<{ publisherPlatform: string; platformPosition: string; device: string; ctr: number }>;
   pastDecisionOutcomes: Array<{ recommendedChannel: string | null; outcome: string; notes: string | null }>;
+  pastCampaignRecommendations: Array<{ question: string; recommendations: unknown; outcome: string | null; notes: string | null }>;
   personas: Array<{ name: string; primaryGoal: string }>;
   knowledgeGraphConnections: KnowledgeGraphExtension[];
   dataAvailability: { hasReach: boolean; hasFrequency: boolean; hasBudget: boolean; hasAudienceData: boolean; hasPlacementData: boolean; daysOfDailyHistory: number };
@@ -169,6 +170,30 @@ export async function buildCampaignAnalystContext(
     }
   }
 
+  // Real Learning gap closed — past campaign-level recommendations
+  // for this specific campaign, with their real reported outcomes if
+  // any exist. Mirrors the exact pastDecisionOutcomes pattern above,
+  // just scoped to campaign_entity_id instead of business product_name.
+  const { data: pastRecommendationRows } = await supabase
+    .from("campaign_analyst_recommendations")
+    .select("id, question, recommendations")
+    .eq("campaign_entity_id", campaign.id)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  let pastCampaignRecommendations: CampaignAnalystContext["pastCampaignRecommendations"] = [];
+  if (pastRecommendationRows && pastRecommendationRows.length > 0) {
+    const { data: outcomeRows } = await supabase
+      .from("campaign_analyst_outcomes")
+      .select("recommendation_id, outcome, notes")
+      .in("recommendation_id", pastRecommendationRows.map((r) => r.id));
+
+    pastCampaignRecommendations = pastRecommendationRows.map((r) => {
+      const matchedOutcome = (outcomeRows ?? []).find((o) => o.recommendation_id === r.id);
+      return { question: r.question, recommendations: r.recommendations, outcome: matchedOutcome?.outcome ?? null, notes: matchedOutcome?.notes ?? null };
+    });
+  }
+
   const uniqueDays = new Set((dailySnapshots ?? []).map((s) => s.captured_at.slice(0, 10)));
 
   return {
@@ -187,6 +212,7 @@ export async function buildCampaignAnalystContext(
       publisherPlatform: p.publisher_platform, platformPosition: p.platform_position, device: p.impression_device, ctr: p.value,
     })),
     pastDecisionOutcomes,
+    pastCampaignRecommendations,
     personas,
     knowledgeGraphConnections,
     dataAvailability: {

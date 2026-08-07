@@ -9,6 +9,7 @@ import {
 } from "./prompt";
 import { buildCampaignAnalystContext } from "@/lib/campaignAnalyst/buildContext";
 import { ANALYST_SYSTEM_PROMPT, buildAnalystPrompt } from "@/lib/campaignAnalyst/prompt";
+import { persistCampaignRecommendation } from "./persistCampaignRecommendation";
 import { callClaude } from "@/lib/claude";
 
 export type ConsultantBrainResult =
@@ -73,7 +74,19 @@ export async function runConsultantBrain(
       };
     }
 
-    return { ok: true, response: parsed as object, routedTo };
+    // Real Learning gap closed here too — the second real entry point
+    // for campaign-specific responses. Only persists for
+    // campaign_specific, since the other three intents aren't tied to
+    // one specific campaign the same way.
+    let recommendationId: string | null = null;
+    if (intent.type === "campaign_specific") {
+      const typedParsed = parsed as { recommendations?: unknown };
+      recommendationId = await persistCampaignRecommendation(
+        supabase, userId, intent.campaignEntityId, question, typedParsed.recommendations ?? [], "sidebar consultant",
+      );
+    }
+
+    return { ok: true, response: { ...(parsed as object), recommendationId }, routedTo };
   } catch (err) {
     console.error("[consultantBrain] Claude call failed:", err);
     return { ok: false, status: 503, error: "The consultant is temporarily unavailable. Please try again shortly." };
