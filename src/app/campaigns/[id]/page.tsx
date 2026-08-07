@@ -136,7 +136,7 @@ export default async function CampaignDetailPage({ params, searchParams }: { par
         <div className="card p-5 grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-xs text-text-muted mb-1">Health score</p>
-            <p className="text-lg font-semibold text-text-primary">{health.healthScore ?? "—"}</p>
+            <p className="text-3xl font-display font-medium text-text-primary leading-none">{health.healthScore ?? "—"}</p>
             {health.healthScore !== null && (
               <p className="text-[10px] text-text-muted mt-0.5 leading-tight">
                 {[

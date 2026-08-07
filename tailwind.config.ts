@@ -88,6 +88,14 @@ const config: Config = {
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],
         mono: ["'JetBrains Mono'", "ui-monospace", "monospace"],
+        // The one real typographic risk, per the frontend-design skill's
+        // "spend boldness in one place" guidance — a genuinely
+        // characterful serif reserved for the numbers that matter most
+        // (health scores, key stats, confidence), never body text. Not
+        // decoration: it makes the Constitution's own Evidence-First
+        // Rule (facts vs. interpretation) visually legible, not just
+        // structurally true.
+        display: ["Fraunces", "Georgia", "serif"],
       },
 
       borderRadius: {
