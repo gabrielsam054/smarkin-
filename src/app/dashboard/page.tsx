@@ -152,17 +152,41 @@ export default async function DashboardPage() {
               <Zap size={14} className="text-primary" />
               <p className="text-sm font-semibold text-text-primary">Today&apos;s briefing</p>
             </div>
-            <p className="text-sm text-text-secondary mb-3">
+            <p className="text-sm text-text-secondary mb-4">
               {briefing.openOpportunityCount} open {briefing.openOpportunityCount === 1 ? "finding" : "findings"} across your connected campaigns
               {briefing.criticalCount > 0 && <span className="text-destructive font-medium"> — {briefing.criticalCount} need attention</span>}
               {briefing.campaignsImproving > 0 && `. ${briefing.campaignsImproving} ${briefing.campaignsImproving === 1 ? "campaign is" : "campaigns are"} trending up`}
               {briefing.campaignsDeclining > 0 && `, ${briefing.campaignsDeclining} trending down`}.
             </p>
-            {briefing.topPriorities.length > 0 && (
+
+            {/* Beta 0 — the single top priority, featured, with a real
+                Review action using the same pattern just built for
+                Opportunities. Not just a list item — a genuine
+                "here's the one thing, here's a real way to act on it"
+                briefing moment, reusing the grounded Analyst rather
+                than inventing a new summary mechanism. */}
+            {briefing.topPriorities[0] && (() => {
+              const top = briefing.topPriorities[0];
+              const campaignId = campaignIdByExternalId.get(top.campaignExternalId);
+              return (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 mb-3">
+                  <p className="text-[10px] font-mono uppercase tracking-wide text-primary mb-1.5">Recommended focus</p>
+                  <p className="text-sm text-text-primary mb-2">{top.title}</p>
+                  {campaignId && (
+                    <Link href={`/campaigns/${campaignId}?askAbout=${encodeURIComponent(top.title)}#analyst`}
+                      className="text-xs font-semibold text-primary hover:underline">
+                      Review with the Analyst →
+                    </Link>
+                  )}
+                </div>
+              );
+            })()}
+
+            {briefing.topPriorities.length > 1 && (
               <div className="flex flex-col gap-1.5">
-                {briefing.topPriorities.map((p, i) => {
+                {briefing.topPriorities.slice(1).map((p, i) => {
                   const campaignId = campaignIdByExternalId.get(p.campaignExternalId);
-                  const content = <><span className="text-text-muted font-mono">{i + 1}.</span> {p.title}</>;
+                  const content = <><span className="text-text-muted font-mono">{i + 2}.</span> {p.title}</>;
                   return campaignId ? (
                     <Link key={i} href={`/campaigns/${campaignId}`} className="text-xs text-text-secondary hover:text-text-primary transition-colors">{content}</Link>
                   ) : (
