@@ -31,7 +31,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const raw = await callClaude({
       system: ANALYST_SYSTEM_PROMPT,
       prompt: buildAnalystPrompt(context, body.question.trim()),
-      maxTokens: 1200,
+      // Real fix, found via live testing: 1200 tokens genuinely wasn't
+      // enough for this response shape (executive answer + evidence +
+      // reasoning + multiple recommendations, each with their own
+      // evidence + a full limitations array + follow-ups) — confirmed
+      // by an actual truncated response cut off mid-JSON in production.
+      maxTokens: 2500,
     });
 
     // Defensive parsing — never trust the model's output blindly, per
@@ -44,7 +49,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       parsed = JSON.parse(cleaned);
     } catch {
       console.error("[campaign-analyst] model returned unparseable JSON:", raw.slice(0, 500));
-      return NextResponse.json({ error: "The analyst couldn't produce a valid response. Please try rephrasing your question." }, { status: 502 });
+      // A response that doesn't end with a closing brace was very
+      // likely cut off mid-generation (a real, confirmed failure mode
+      // found via live testing) rather than a genuinely malformed
+      // response — "try rephrasing" is honest advice for the latter,
+      // actively misleading for the former, since the question wasn't
+      // the problem.
+      const likelyTruncated = !cleaned.trim().endsWith("}");
+      return NextResponse.json({
+        error: likelyTruncated
+          ? "The analyst's response was cut off before finishing. Please try again."
+          : "The analyst couldn't produce a valid response. Please try rephrasing your question.",
+      }, { status: 502 });
     }
 
     if (!parsed.executiveAnswer || !Array.isArray(parsed.evidence) || !Array.isArray(parsed.recommendations) || !Array.isArray(parsed.limitations)) {
