@@ -105,7 +105,7 @@ export async function buildCampaignAnalystContext(
   let pastDecisionOutcomes: CampaignAnalystContext["pastDecisionOutcomes"] = [];
   const { data: linkedProfile } = await supabase
     .from("business_intelligence_profiles")
-    .select("product_name")
+    .select("product_name, knowledge_graph_profile")
     .eq("linked_platform_account_id", campaign.platform_account_id)
     .maybeSingle();
 
@@ -141,22 +141,31 @@ export async function buildCampaignAnalystContext(
   // same real repository already used by the Campaign Blueprint,
   // rather than a new query against customer_research.
   let personas: CampaignAnalystContext["personas"] = [];
-  let knowledgeGraphConnections: CampaignAnalystContext["knowledgeGraphConnections"] = [];
   if (linkedProfile?.product_name) {
     const customerRepo = new SupabaseCustomerResearchRepository();
     const customerAsset = await customerRepo.findLatest(userId, linkedProfile.product_name);
     if (customerAsset) {
       personas = customerAsset.result.customerPersonas.map((p) => ({ name: p.name, primaryGoal: p.primaryGoal }));
+    }
+  }
 
-      // Now that real persona goals exist in this context, the
-      // Knowledge Graph extensions seeded in Phase 1 (e.g. "Deepen my
-      // yoga practice" -> Offer) have a genuine place to connect to —
-      // queried by the real goal names just fetched, not a blind
-      // fetch of everything in the table.
-      for (const persona of personas) {
-        const edges = await getGraphExtensionsForNode(supabase, persona.primaryGoal);
-        knowledgeGraphConnections.push(...edges);
-      }
+  // Knowledge Graph connections — queried against the real, cached
+  // connectedGoals from business_intelligence_profiles' own static
+  // graph traversal (lookupKnowledgeGraphProfile()), NOT against
+  // Customer Research's separate persona.primaryGoal field. Found via
+  // real testing: Customer Research's persona matching is a thinner,
+  // separate system that can genuinely find nothing even when the
+  // static graph has real, high-confidence coverage for the same
+  // product (confirmed directly for "Whey Protein" — Customer
+  // Research found no persona, but the static graph has a real,
+  // 99%-confidence "Build Muscle" goal edge). The cached graph
+  // traversal is the more reliable source to query against.
+  let knowledgeGraphConnections: CampaignAnalystContext["knowledgeGraphConnections"] = [];
+  const cachedGraphProfile = linkedProfile?.knowledge_graph_profile as { connectedGoals?: string[] } | null;
+  if (cachedGraphProfile?.connectedGoals) {
+    for (const goal of cachedGraphProfile.connectedGoals) {
+      const edges = await getGraphExtensionsForNode(supabase, goal);
+      knowledgeGraphConnections.push(...edges);
     }
   }
 
