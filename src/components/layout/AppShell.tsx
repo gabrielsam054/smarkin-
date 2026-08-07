@@ -3,6 +3,7 @@
 import { useState, ReactNode } from "react";
 import { Menu, X } from "lucide-react";
 import { Sidebar } from "./Sidebar";
+import { ConsultantSidebar } from "./ConsultantSidebar";
 
 /**
  * Reconstructed against the prop contract this project's real pages have
@@ -76,7 +77,12 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="flex-1 min-w-0">{children}</main>
+        <main className="flex-1 min-w-0 flex flex-col lg:flex-row gap-6 items-start">
+          <div className="flex-1 min-w-0 w-full">{children}</div>
+          <div className="hidden lg:block pt-6 pr-6">
+            <ConsultantSidebar firstName={firstName} />
+          </div>
+        </main>
       </div>
     </div>
   );

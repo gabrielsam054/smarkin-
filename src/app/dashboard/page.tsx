@@ -16,8 +16,6 @@ import { AppShell } from "@/components/layout/AppShell";
 import { CommandBar } from "@/components/ai/CommandBar";
 import { resolveWorkspaceId } from "@/lib/workspace/resolveWorkspaceId";
 import { buildDailyBriefing } from "@/lib/dailyBriefing";
-import { ConsultantSidebar } from "@/components/layout/ConsultantSidebar";
-import { CONNECTORS } from "@/lib/connectors";
 
 // ── Mini sparkline (deterministic per metric) ─────────────────
 function Spark({ color, seed }: { color: string; seed: number }) {
@@ -98,24 +96,6 @@ export default async function DashboardPage() {
     : { data: null };
   const campaignIdByExternalId = new Map<string, string>((briefingCampaignRows ?? []).map((c) => [c.external_id, c.id]));
 
-  // Real connector status for the sidebar — same real source
-  // (CONNECTORS + platform_accounts) already proven on the
-  // Integrations page, not a second, separately-maintained list.
-  const { data: connectedAccountRows } = workspaceId
-    ? await supabase.from("platform_accounts").select("connector_key, status").eq("workspace_id", workspaceId)
-    : { data: null };
-  const connectedKeys = new Set((connectedAccountRows ?? []).filter((a) => a.status === "active").map((a) => a.connector_key));
-  const sidebarConnectors = CONNECTORS.map((c) => ({
-    key: c.key, displayName: c.displayName, connected: connectedKeys.has(c.key), available: c.available,
-  }));
-
-  const topRecommendation = briefing?.topPriorities[0]
-    ? {
-        title: briefing.topPriorities[0].title,
-        evidence: briefing.topPriorities[0].evidence,
-        campaignId: campaignIdByExternalId.get(briefing.topPriorities[0].campaignExternalId) ?? null,
-      }
-    : null;
   const hasAccess      = subscription?.status === "active";
   const usedThisPeriod = usageRow?.analyses ?? 0;
   const LIMITS: Record<string, number | null> = { trial: 20, pro: null, agency: null };
@@ -151,8 +131,7 @@ export default async function DashboardPage() {
         </Button>
       }
     >
-      <div className="p-4 sm:p-6 lg:p-8 flex flex-col lg:flex-row gap-6 items-start">
-      <div className="flex-1 min-w-0 w-full">
+      <div className="p-4 sm:p-6 lg:p-8">
         <div className="mb-6">
           <CommandBar />
         </div>
@@ -453,13 +432,6 @@ export default async function DashboardPage() {
             </div>
           </div>
         </div>
-      </div>
-
-      <ConsultantSidebar
-        firstName={firstName}
-        recommendation={topRecommendation}
-        connectors={sidebarConnectors}
-      />
       </div>
 
       <Suspense fallback={null}>
