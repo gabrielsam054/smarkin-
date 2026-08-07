@@ -1,6 +1,9 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { computeCampaignHealth } from "@/lib/connectors/campaignHealth";
 
+import { SupabaseCustomerResearchRepository } from "@/lib/capabilities/customerResearch/repository/supabaseCustomerResearchRepository";
+import { getGraphExtensionsForNode, KnowledgeGraphExtension } from "@/lib/consultant/knowledgeGraphExtensions";
+
 export interface CampaignAnalystContext {
   campaignName: string;
   objective: string | null;
@@ -13,6 +16,8 @@ export interface CampaignAnalystContext {
   audienceSegments: Array<{ ageRange: string; gender: string; ctr: number }>;
   placementSegments: Array<{ publisherPlatform: string; platformPosition: string; device: string; ctr: number }>;
   pastDecisionOutcomes: Array<{ recommendedChannel: string | null; outcome: string; notes: string | null }>;
+  personas: Array<{ name: string; primaryGoal: string }>;
+  knowledgeGraphConnections: KnowledgeGraphExtension[];
   dataAvailability: { hasReach: boolean; hasFrequency: boolean; hasBudget: boolean; hasAudienceData: boolean; hasPlacementData: boolean; daysOfDailyHistory: number };
 }
 
@@ -130,6 +135,31 @@ export async function buildCampaignAnalystContext(
     }
   }
 
+  // Real persona data — reuses the exact same product_name already
+  // resolved above for decision outcomes, not a second, separate
+  // resolution path. Reuses SupabaseCustomerResearchRepository, the
+  // same real repository already used by the Campaign Blueprint,
+  // rather than a new query against customer_research.
+  let personas: CampaignAnalystContext["personas"] = [];
+  let knowledgeGraphConnections: CampaignAnalystContext["knowledgeGraphConnections"] = [];
+  if (linkedProfile?.product_name) {
+    const customerRepo = new SupabaseCustomerResearchRepository();
+    const customerAsset = await customerRepo.findLatest(userId, linkedProfile.product_name);
+    if (customerAsset) {
+      personas = customerAsset.result.customerPersonas.map((p) => ({ name: p.name, primaryGoal: p.primaryGoal }));
+
+      // Now that real persona goals exist in this context, the
+      // Knowledge Graph extensions seeded in Phase 1 (e.g. "Deepen my
+      // yoga practice" -> Offer) have a genuine place to connect to —
+      // queried by the real goal names just fetched, not a blind
+      // fetch of everything in the table.
+      for (const persona of personas) {
+        const edges = await getGraphExtensionsForNode(supabase, persona.primaryGoal);
+        knowledgeGraphConnections.push(...edges);
+      }
+    }
+  }
+
   const uniqueDays = new Set((dailySnapshots ?? []).map((s) => s.captured_at.slice(0, 10)));
 
   return {
@@ -148,6 +178,8 @@ export async function buildCampaignAnalystContext(
       publisherPlatform: p.publisher_platform, platformPosition: p.platform_position, device: p.impression_device, ctr: p.value,
     })),
     pastDecisionOutcomes,
+    personas,
+    knowledgeGraphConnections,
     dataAvailability: {
       hasReach: "reach" in latestMetrics, hasFrequency: "frequency" in latestMetrics,
       hasBudget: campaign.daily_budget !== null || campaign.lifetime_budget !== null,

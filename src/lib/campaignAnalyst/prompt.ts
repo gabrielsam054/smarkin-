@@ -50,6 +50,9 @@ Placement/device segments (publisher platform, position, device CTR, if any): ${
 Past decisions made about this same business, with their real reported outcomes (if any): ${JSON.stringify(context.pastDecisionOutcomes)}
 ${context.pastDecisionOutcomes.length > 0 ? "If relevant to the question, reference this real history explicitly — e.g. \"last time a similar recommendation was made, the reported outcome was X.\" Never claim history exists if this array is empty." : ""}
 
+Real customer personas for this business, if researched (name and primary goal): ${JSON.stringify(context.personas)}
+Real Knowledge Graph connections for these personas' goals (source, relationship, target, confidence) — if any exist, they represent a real, evidence-backed edge relevant to this business; cite them by name if genuinely relevant to the question, never invent a connection not present here: ${JSON.stringify(context.knowledgeGraphConnections)}
+
 DATA AVAILABILITY — explicitly note these gaps in your limitations when relevant:
 - Reach data: ${context.dataAvailability.hasReach ? "available" : "NOT available"}
 - Frequency data: ${context.dataAvailability.hasFrequency ? "available" : "NOT available"}
