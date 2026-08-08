@@ -4,6 +4,7 @@ import { syncMetaCampaignInsights, CircuitOpenError } from "@/lib/connectors/syn
 import { recordSyncFailure } from "@/lib/connectors/sync/connectorHealth";
 import { detectOpportunities, detectAudienceOpportunities, detectPlacementOpportunities } from "@/lib/connectors/detectOpportunities";
 import { syncAdCreatives } from "@/lib/connectors/syncAdCreatives";
+import { syncAdInsights } from "@/lib/connectors/syncAdInsights";
 import { buildServiceRoleClient } from "@/lib/supabase/serviceClient";
 
 /**
@@ -110,6 +111,11 @@ export async function GET(request: NextRequest) {
           await syncAdCreatives(supabase, job.platformAccountId);
         } catch (err) {
           console.error(`[cron/sync] ad creative sync failed for ${job.platformAccountId}:`, err);
+        }
+        try {
+          await syncAdInsights(supabase, job.platformAccountId);
+        } catch (err) {
+          console.error(`[cron/sync] ad insights sync failed for ${job.platformAccountId}:`, err);
         }
       }
     } catch (err) {
