@@ -151,6 +151,29 @@ export default async function BlueprintPage({ params }: { params: Promise<{ prod
           </div>
         )}
 
+        {/* Product Intelligence — real, from productIntelligenceDatabase,
+            one of the audit's highest-value unused tables. Honestly
+            labeled with which real product it matched against, since
+            "Whey Protein" matches "Protein Powder" via word overlap,
+            not an exact name — the user should know that. */}
+        {blueprint.productIntelligence && (
+          <div>
+            <h2 className="text-sm font-semibold text-text-primary mb-3">Upsell &amp; Cross-Sell Opportunities</h2>
+            <p className="text-[11px] text-text-muted mb-2">Matched against &quot;{blueprint.productIntelligence.matchedProductName}&quot; in the product reference database — real, but not specific to this exact product.</p>
+            <div className="card p-4 flex flex-col gap-2">
+              {blueprint.productIntelligence.upsellProducts.length > 0 && (
+                <div><p className="text-xs text-text-muted mb-1">Upsell</p><p className="text-sm text-text-secondary">{blueprint.productIntelligence.upsellProducts.join(", ")}</p></div>
+              )}
+              {blueprint.productIntelligence.crossSellProducts.length > 0 && (
+                <div><p className="text-xs text-text-muted mb-1">Cross-sell</p><p className="text-sm text-text-secondary">{blueprint.productIntelligence.crossSellProducts.join(", ")}</p></div>
+              )}
+              {blueprint.productIntelligence.recommendedCreative.length > 0 && (
+                <div><p className="text-xs text-text-muted mb-1">Recommended creative formats</p><p className="text-sm text-text-secondary">{blueprint.productIntelligence.recommendedCreative.join(", ")}</p></div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Audiences — real, from Audience Research */}
         {blueprint.primaryAudiences.length > 0 && (
           <div>

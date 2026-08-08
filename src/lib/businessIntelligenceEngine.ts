@@ -48,7 +48,7 @@ function normalizeWord(w: string): string {
   return w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w;
 }
 function words(v: string): Set<string> { return new Set(s(v).split(/\s+/).filter(w => w.length > 2).map(normalizeWord)); }
-function overlap(a: string, b: string): number {
+export function overlap(a: string, b: string): number {
   const aw = words(a), bw = words(b);
   return [...aw].filter(w => bw.has(w)).length;
 }

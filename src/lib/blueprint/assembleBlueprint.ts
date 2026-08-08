@@ -2,6 +2,7 @@ import { SupabaseCustomerResearchRepository } from "@/lib/capabilities/customerR
 import { SupabaseAudienceResearchRepository } from "@/lib/capabilities/audienceResearch/repository/supabaseAudienceResearchRepository";
 import { AudienceRecommendation, PlatformRecommendation, TargetingStrategy } from "@/lib/capabilities/audienceResearch/types";
 import { RecommendedMessaging } from "@/lib/capabilities/customerResearch/types";
+import { findProductIntelligenceMatch, ProductIntelligenceMatch } from "./productIntelligence";
 import { SupabaseClient } from "@supabase/supabase-js";
 
 export interface BlueprintData {
@@ -19,6 +20,7 @@ export interface BlueprintData {
   targetingStrategies: TargetingStrategy[];
   audienceGaps: string[];
   customerGaps: string[];
+  productIntelligence: ProductIntelligenceMatch | null;
 }
 
 /**
@@ -73,5 +75,6 @@ export async function assembleBlueprint(
     targetingStrategies: audienceAsset?.result.targetingStrategies ?? [],
     audienceGaps: audienceAsset?.result.gaps ?? [],
     customerGaps: customerAsset?.result.gaps ?? [],
+    productIntelligence: findProductIntelligenceMatch(productName),
   };
 }
