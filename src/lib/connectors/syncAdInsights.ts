@@ -60,6 +60,15 @@ export async function syncAdInsights(supabase: SupabaseClient, platformAccountId
     // reasoning already applied to the original 90-day campaign window.
     insightsUrl.searchParams.set("date_preset", "last_30d");
 
+    // TEMPORARY, more direct diagnostic: fetch the raw response
+    // directly, bypassing fetchAllPages, to see exactly what Meta
+    // returns for this specific request - a real error message in the
+    // body, an empty-but-valid response, or something fetchAllPages
+    // itself might be silently filtering out.
+    const rawRes = await fetch(insightsUrl.toString());
+    const rawBody = await rawRes.text();
+    console.error(`[syncAdInsights][RAW] status: ${rawRes.status}, body: ${rawBody.slice(0, 1000)}`);
+
     const rows = await fetchAllPages<{
       ad_id: string; impressions?: string; clicks?: string; spend?: string; ctr?: string; reach?: string; frequency?: string;
       actions?: Array<{ action_type: string; value: string }>;
