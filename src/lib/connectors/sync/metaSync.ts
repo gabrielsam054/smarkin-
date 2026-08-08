@@ -287,6 +287,13 @@ export async function syncMetaCampaignInsights(job: SyncJob): Promise<void> {
     const campaignRows = await fetchAllPages<{ id: string; daily_budget?: string; lifetime_budget?: string; objective?: string }>(
       budgetUrl.toString(), `budget fetch for platform_account ${job.platformAccountId}`
     );
+    // TEMPORARY DIAGNOSTIC: objective is confirmed null for every real
+    // campaign in at least one live account despite daily_budget
+    // coming through correctly for some - meaning the request/parsing
+    // mechanism works, but objective specifically doesn't. Logging the
+    // raw response for the first few campaigns to see exactly what
+    // Meta's API actually returns, rather than guess further.
+    console.error(`[sync][DIAGNOSTIC] Raw campaign objective data (first 3): ${JSON.stringify(campaignRows.slice(0, 3))}`);
     for (const c of campaignRows) {
       budgetByCampaignId.set(c.id, {
         dailyBudget: c.daily_budget ? Number(c.daily_budget) / 100 : null,
