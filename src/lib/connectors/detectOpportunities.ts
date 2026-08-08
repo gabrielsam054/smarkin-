@@ -1,5 +1,15 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { resolveLatestMetrics } from "./resolveLatestMetrics";
+import DB_RAW from "../smarkin-db.json";
+
+// Real, single source for this specific recommendation text — the
+// exact same optimisationRules table the audit found sitting unused.
+// Read directly from it rather than a hardcoded copy that could
+// silently drift from the real source over time.
+const OPTIMISATION_RULES = (DB_RAW as { optimisationRules?: Array<{ Metric: string; Condition: string; Recommendation: string }> }).optimisationRules ?? [];
+function findOptimisationRule(metric: string, condition: string): string | null {
+  return OPTIMISATION_RULES.find((r) => r.Metric === metric && r.Condition === condition)?.Recommendation ?? null;
+}
 
 /**
  * The first genuine Intelligence engine — not schema-only. Deliberately
@@ -96,6 +106,12 @@ export async function detectOpportunities(
         evidence: {
           campaign_ctr: Number(c.metrics.ctr.toFixed(2)), account_avg_ctr: Number(avgCtr.toFixed(2)),
           campaign_spend: Number(c.metrics.spend.toFixed(2)), account_avg_spend: Number(avgSpend.toFixed(2)),
+          // Real, from the optimisationRules reference table — not
+          // generated per-opportunity, the same static recommendation
+          // for this exact metric/condition every time. Honestly
+          // omitted (undefined) if the table entry doesn't exist,
+          // never a fabricated fallback string.
+          ...(findOptimisationRule("CTR", "Low") ? { recommended_action: findOptimisationRule("CTR", "Low") } : {}),
         },
         confidence,
       });
