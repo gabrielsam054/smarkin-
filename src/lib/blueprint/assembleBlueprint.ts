@@ -4,6 +4,7 @@ import { AudienceRecommendation, PlatformRecommendation, TargetingStrategy } fro
 import { RecommendedMessaging } from "@/lib/capabilities/customerResearch/types";
 import { findProductIntelligenceMatch, ProductIntelligenceMatch } from "./productIntelligence";
 import { getFunnelGuidance, FunnelGuidance } from "./funnelGuidance";
+import { getCreativeStrategyForGoal } from "./creativeStrategy";
 import { SupabaseClient } from "@supabase/supabase-js";
 
 export interface BlueprintData {
@@ -23,6 +24,9 @@ export interface BlueprintData {
   customerGaps: string[];
   productIntelligence: ProductIntelligenceMatch | null;
   funnelGuidance: { mostAware: FunnelGuidance | null; productAware: FunnelGuidance | null };
+  businessType: string | null;
+  primaryGoal: string | null;
+  bestCreativeForGoal: string | null;
 }
 
 /**
@@ -54,13 +58,15 @@ export async function assembleBlueprint(
   const customerRepo = new SupabaseCustomerResearchRepository();
   const audienceRepo = new SupabaseAudienceResearchRepository();
 
-  const [customerAsset, audienceAsset, brainProfile] = await Promise.all([
+  const [customerAsset, audienceAsset, brainProfile, classification] = await Promise.all([
     customerRepo.findLatest(userId, productName),
     audienceRepo.findLatest(userId, productName),
     supabase.from("business_intelligence_profiles").select("product_profile").eq("user_id", userId).eq("product_name", productName).maybeSingle(),
+    supabase.from("business_classification").select("business_type, primary_goal").eq("user_id", userId).eq("product_name", productName).maybeSingle(),
   ]);
 
   const productProfile = brainProfile.data?.product_profile as { industry?: string } | undefined;
+  const primaryGoal = classification.data?.primary_goal ?? null;
 
   return {
     productName,
@@ -79,5 +85,8 @@ export async function assembleBlueprint(
     customerGaps: customerAsset?.result.gaps ?? [],
     productIntelligence: findProductIntelligenceMatch(productName),
     funnelGuidance: { mostAware: getFunnelGuidance("Most Aware"), productAware: getFunnelGuidance("Product Aware") },
+    businessType: classification.data?.business_type ?? null,
+    primaryGoal,
+    bestCreativeForGoal: getCreativeStrategyForGoal(primaryGoal),
   };
 }

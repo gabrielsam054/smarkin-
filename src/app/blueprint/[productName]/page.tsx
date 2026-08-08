@@ -6,6 +6,7 @@ import { isCurrentUserAdmin } from "@/lib/admin";
 import { assembleBlueprint } from "@/lib/blueprint/assembleBlueprint";
 import { persistBlueprintRecommendation, getPastBlueprintOutcomes } from "@/lib/blueprint/blueprintLearning";
 import { BlueprintOutcomeReporter } from "./BlueprintOutcomeReporter";
+import { BusinessClassificationSelector } from "./BusinessClassificationSelector";
 import { AppShell } from "@/components/layout/AppShell";
 
 /**
@@ -75,6 +76,8 @@ export default async function BlueprintPage({ params }: { params: Promise<{ prod
         <div className="rounded-lg border border-border bg-surface-2 px-4 py-3 text-xs text-text-secondary">
           This is a planning document, not a live campaign — nothing here has been sent to Meta. Take this into Meta Ads Manager yourself to actually create and launch the campaign.
         </div>
+
+        <BusinessClassificationSelector productName={productName} initialBusinessType={blueprint.businessType} initialGoal={blueprint.primaryGoal} />
 
         {/* Real Learning gap closed — genuine past outcomes for this
             product, only shown when a real one exists. */}
@@ -184,6 +187,17 @@ export default async function BlueprintPage({ params }: { params: Promise<{ prod
                 <div><p className="text-xs text-text-muted mb-1">Recommended creative formats</p><p className="text-sm text-text-secondary">{blueprint.productIntelligence.recommendedCreative.join(", ")}</p></div>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Real, from creativeStrategy - the first genuine beneficiary
+            of the new business_classification capture point. Only
+            shown when a real, user-provided goal exists - never
+            guessed. */}
+        {blueprint.bestCreativeForGoal && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+            <p className="text-[10px] font-mono uppercase tracking-wide text-primary mb-1">Best creative format for &quot;{blueprint.primaryGoal}&quot;</p>
+            <p className="text-sm text-text-primary">{blueprint.bestCreativeForGoal}</p>
           </div>
         )}
 
