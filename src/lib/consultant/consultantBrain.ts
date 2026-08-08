@@ -10,6 +10,7 @@ import {
 import { buildCampaignAnalystContext } from "@/lib/campaignAnalyst/buildContext";
 import { ANALYST_SYSTEM_PROMPT, buildAnalystPrompt } from "@/lib/campaignAnalyst/prompt";
 import { persistCampaignRecommendation } from "./persistCampaignRecommendation";
+import { findFrameworkMentionedIn } from "./marketingFrameworks";
 import { callClaude } from "@/lib/claude";
 
 export type ConsultantBrainResult =
@@ -57,7 +58,8 @@ export async function runConsultantBrain(
       raw = await callClaude({ system: ACCOUNT_SUMMARY_SYSTEM_PROMPT, prompt: buildAccountSummaryPrompt(context, question), maxTokens: 2500 });
       routedTo = "account summary";
     } else {
-      raw = await callClaude({ system: GENERAL_EXPERTISE_SYSTEM_PROMPT, prompt: buildGeneralExpertisePrompt(question), maxTokens: 2500 });
+      const framework = await findFrameworkMentionedIn(supabase, question);
+      raw = await callClaude({ system: GENERAL_EXPERTISE_SYSTEM_PROMPT, prompt: buildGeneralExpertisePrompt(question, framework), maxTokens: 2500 });
       routedTo = "general marketing expertise";
     }
 

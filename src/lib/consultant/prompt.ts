@@ -1,6 +1,7 @@
 import { AccountSummaryContext } from "./buildAccountSummaryContext";
 import { DiagnosisContext } from "./buildDiagnosisContext";
 import { TWO_SOURCE_RULES, REASONING_ENGINE_CHECKLIST, CONSULTANT_RESPONSE_JSON_SHAPE } from "./sharedResponseSchema";
+import { MarketingFramework } from "./marketingFrameworks";
 
 export const ACCOUNT_SUMMARY_SYSTEM_PROMPT = `You are a grounded marketing account summarizer inside Smarkin OS. You are NOT a generic chatbot.
 
@@ -112,10 +113,12 @@ GENERAL-EXPERTISE-SPECIFIC RULES:
 Respond with ONLY valid JSON matching this exact shape, no markdown fences, no preamble:
 ${CONSULTANT_RESPONSE_JSON_SHAPE}`;
 
-export function buildGeneralExpertisePrompt(question: string): string {
+export function buildGeneralExpertisePrompt(question: string, framework: MarketingFramework | null): string {
   return `No real account, campaign, or opportunity data was matched to this question — there is nothing in this account's real data to ground an answer in.
 
 USER QUESTION: ${question}
+
+${framework ? `A real, named marketing framework was detected in this question: ${JSON.stringify(framework)}. If genuinely relevant, structure your marketing_expertise answer around its real steps explicitly — don't just mention the framework's name, actually apply its structure to the question asked.` : ""}
 
 If this is a genuine marketing/business/advertising question, answer it as marketing_expertise, clearly labeled as general guidance. If it's genuinely unrelated to marketing, say so honestly instead of forcing a connection.`;
 }
