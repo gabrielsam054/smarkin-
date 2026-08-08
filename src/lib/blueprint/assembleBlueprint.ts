@@ -3,6 +3,7 @@ import { SupabaseAudienceResearchRepository } from "@/lib/capabilities/audienceR
 import { AudienceRecommendation, PlatformRecommendation, TargetingStrategy } from "@/lib/capabilities/audienceResearch/types";
 import { RecommendedMessaging } from "@/lib/capabilities/customerResearch/types";
 import { findProductIntelligenceMatch, ProductIntelligenceMatch } from "./productIntelligence";
+import { getFunnelGuidance, FunnelGuidance } from "./funnelGuidance";
 import { SupabaseClient } from "@supabase/supabase-js";
 
 export interface BlueprintData {
@@ -21,6 +22,7 @@ export interface BlueprintData {
   audienceGaps: string[];
   customerGaps: string[];
   productIntelligence: ProductIntelligenceMatch | null;
+  funnelGuidance: { mostAware: FunnelGuidance | null; productAware: FunnelGuidance | null };
 }
 
 /**
@@ -76,5 +78,6 @@ export async function assembleBlueprint(
     audienceGaps: audienceAsset?.result.gaps ?? [],
     customerGaps: customerAsset?.result.gaps ?? [],
     productIntelligence: findProductIntelligenceMatch(productName),
+    funnelGuidance: { mostAware: getFunnelGuidance("Most Aware"), productAware: getFunnelGuidance("Product Aware") },
   };
 }
