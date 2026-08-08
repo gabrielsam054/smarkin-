@@ -8,7 +8,7 @@ export interface DiagnosisContext {
   decliningCampaigns: Array<{ name: string; ctrChangePercent: number | null }>;
   problemFindings: Array<{ title: string; confidence: string; evidence: Record<string, unknown> }>;
   relevantPrinciples: MarketingPrinciple[];
-  playbook: MarketingPlaybook | null;
+  playbooks: MarketingPlaybook[];
 }
 
 // The real, disclosed subset of opportunity types that represent an
@@ -30,7 +30,7 @@ export async function buildDiagnosisContext(supabase: SupabaseClient, workspaceI
     .from("platform_accounts").select("id").eq("workspace_id", workspaceId).eq("status", "active");
 
   if (!accounts || accounts.length === 0) {
-    return { hasConnectedAccount: false, decliningCampaigns: [], problemFindings: [], relevantPrinciples: [], playbook: null };
+    return { hasConnectedAccount: false, decliningCampaigns: [], problemFindings: [], relevantPrinciples: [], playbooks: [] };
   }
 
   const { data: campaignRows } = await supabase
@@ -59,14 +59,27 @@ export async function buildDiagnosisContext(supabase: SupabaseClient, workspaceI
     .eq("workspace_id", workspaceId).eq("status", "open")
     .in("opportunity_type", PROBLEM_OPPORTUNITY_TYPES);
 
+  const realOpportunities = opportunities ?? [];
   const relevantPrinciples = await getAllPrinciples(supabase);
-  const playbook = await getPlaybookByName(supabase, "Recover Poor Campaign");
+
+  // Real selection, not a hardcoded default — the right playbook for
+  // the actual problem present, not always the same one regardless of
+  // what's actually wrong.
+  const playbookNames: string[] = [];
+  if (decliningCampaigns.length > 0 || realOpportunities.some((o) => o.opportunity_type === "high_spend_low_ctr" || o.opportunity_type === "high_ctr_low_conversion")) {
+    playbookNames.push("Recover Poor Campaign");
+  }
+  if (realOpportunities.some((o) => o.opportunity_type === "zero_recent_activity")) {
+    playbookNames.push("Reactivate Dormant Campaign");
+  }
+  const playbooks = (await Promise.all(playbookNames.map((name) => getPlaybookByName(supabase, name))))
+    .filter((p): p is MarketingPlaybook => p !== null);
 
   return {
     hasConnectedAccount: true,
     decliningCampaigns,
-    problemFindings: (opportunities ?? []).map((o) => ({ title: o.title, confidence: o.confidence, evidence: o.evidence as Record<string, unknown> })),
+    problemFindings: realOpportunities.map((o) => ({ title: o.title, confidence: o.confidence, evidence: o.evidence as Record<string, unknown> })),
     relevantPrinciples,
-    playbook,
+    playbooks,
   };
 }
