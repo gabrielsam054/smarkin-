@@ -201,6 +201,17 @@ export default async function BlueprintPage({ params }: { params: Promise<{ prod
           </div>
         )}
 
+        {/* Real, from campaignObjectiveDatabase - via one explicit,
+            documented alias ("Lead Generation" -> "Leads"), not fuzzy
+            matching. Honestly absent for App Promotion, since that
+            row genuinely has no AI Strategy value in the source table. */}
+        {blueprint.campaignStrategyForGoal && (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+            <p className="text-[10px] font-mono uppercase tracking-wide text-primary mb-1">Targeting strategy for &quot;{blueprint.primaryGoal}&quot;</p>
+            <p className="text-sm text-text-primary">{blueprint.campaignStrategyForGoal}</p>
+          </div>
+        )}
+
         {/* Audiences — real, from Audience Research */}
         {blueprint.primaryAudiences.length > 0 && (
           <div>

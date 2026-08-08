@@ -5,6 +5,7 @@ import { RecommendedMessaging } from "@/lib/capabilities/customerResearch/types"
 import { findProductIntelligenceMatch, ProductIntelligenceMatch } from "./productIntelligence";
 import { getFunnelGuidance, FunnelGuidance } from "./funnelGuidance";
 import { getCreativeStrategyForGoal } from "./creativeStrategy";
+import { getCampaignStrategyForGoal } from "./campaignObjectiveStrategy";
 import { SupabaseClient } from "@supabase/supabase-js";
 
 export interface BlueprintData {
@@ -27,6 +28,7 @@ export interface BlueprintData {
   businessType: string | null;
   primaryGoal: string | null;
   bestCreativeForGoal: string | null;
+  campaignStrategyForGoal: string | null;
 }
 
 /**
@@ -88,5 +90,6 @@ export async function assembleBlueprint(
     businessType: classification.data?.business_type ?? null,
     primaryGoal,
     bestCreativeForGoal: getCreativeStrategyForGoal(primaryGoal),
+    campaignStrategyForGoal: getCampaignStrategyForGoal(primaryGoal),
   };
 }
