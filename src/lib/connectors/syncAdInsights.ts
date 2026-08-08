@@ -21,13 +21,18 @@ const GRAPH_API_VERSION = "v21.0";
  * the table was already designed to support more than one entity kind.
  */
 export async function syncAdInsights(supabase: SupabaseClient, platformAccountId: string): Promise<void> {
+  console.error(`[syncAdInsights] Starting for platform_account ${platformAccountId}`);
+
   const { data: account } = await supabase
     .from("platform_accounts")
     .select("id, workspace_id, external_account_id")
     .eq("id", platformAccountId)
     .single();
 
-  if (!account) return;
+  if (!account) {
+    console.error(`[syncAdInsights] No account row found for platform_account ${platformAccountId} - stopping.`);
+    return;
+  }
 
   const { data: tokenRow } = await supabase
     .from("oauth_tokens")
@@ -35,7 +40,10 @@ export async function syncAdInsights(supabase: SupabaseClient, platformAccountId
     .eq("platform_account_id", platformAccountId)
     .maybeSingle();
 
-  if (!tokenRow?.enc_access_token) return;
+  if (!tokenRow?.enc_access_token) {
+    console.error(`[syncAdInsights] No token found for platform_account ${platformAccountId} - stopping.`);
+    return;
+  }
 
   const accessToken = decryptToken(Buffer.from(tokenRow.enc_access_token.replace(/^\\x/, ""), "hex"));
 
@@ -57,6 +65,8 @@ export async function syncAdInsights(supabase: SupabaseClient, platformAccountId
       actions?: Array<{ action_type: string; value: string }>;
       action_values?: Array<{ action_type: string; value: string }>;
     }>(insightsUrl.toString(), `ad insights fetch for platform_account ${platformAccountId}`);
+
+    console.error(`[syncAdInsights] Meta returned ${rows.length} real ad-level rows for platform_account ${platformAccountId}`);
 
     if (rows.length === 0) return;
 
@@ -89,6 +99,8 @@ export async function syncAdInsights(supabase: SupabaseClient, platformAccountId
       const { error } = await supabase.from("metric_snapshots").insert(snapshots);
       if (error) {
         console.error(`[syncAdInsights] Failed to write ad-level snapshots for platform_account ${platformAccountId}:`, error.message);
+      } else {
+        console.error(`[syncAdInsights] Successfully wrote ${snapshots.length} ad-level snapshots for platform_account ${platformAccountId}`);
       }
     }
   } catch (err) {
