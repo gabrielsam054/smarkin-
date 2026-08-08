@@ -20,8 +20,26 @@ const GRAPH_API_VERSION = "v21.0";
  * extension of metric_snapshots' existing schema, not a new column —
  * the table was already designed to support more than one entity kind.
  */
+// TEMPORARY diagnostic logger - writes directly to a real table
+// instead of console.error, since finding the right Vercel log line
+// has proven unreliable multiple times this session. Raw fetch, no
+// client library dependency, so a failure here can't be blamed on
+// anything but the write itself.
+async function debugLog(label: string, detail: string) {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return;
+    await fetch(`${url}/rest/v1/temp_debug_log`, {
+      method: "POST",
+      headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ label, detail }),
+    });
+  } catch { /* nothing more to do if even this fails */ }
+}
+
 export async function syncAdInsights(supabase: SupabaseClient, platformAccountId: string): Promise<void> {
-  console.error(`[syncAdInsights] Starting for platform_account ${platformAccountId}`);
+  await debugLog("syncAdInsights-start", `platform_account: ${platformAccountId}`);
 
   const { data: account } = await supabase
     .from("platform_accounts")
@@ -30,7 +48,7 @@ export async function syncAdInsights(supabase: SupabaseClient, platformAccountId
     .single();
 
   if (!account) {
-    console.error(`[syncAdInsights] No account row found for platform_account ${platformAccountId} - stopping.`);
+    await debugLog("syncAdInsights-no-account", `platform_account: ${platformAccountId}`);
     return;
   }
 
@@ -41,7 +59,7 @@ export async function syncAdInsights(supabase: SupabaseClient, platformAccountId
     .maybeSingle();
 
   if (!tokenRow?.enc_access_token) {
-    console.error(`[syncAdInsights] No token found for platform_account ${platformAccountId} - stopping.`);
+    await debugLog("syncAdInsights-no-token", `platform_account: ${platformAccountId}`);
     return;
   }
 
@@ -52,22 +70,11 @@ export async function syncAdInsights(supabase: SupabaseClient, platformAccountId
     insightsUrl.searchParams.set("access_token", accessToken);
     insightsUrl.searchParams.set("level", "ad");
     insightsUrl.searchParams.set("fields", "ad_id,impressions,clicks,spend,ctr,reach,frequency,actions,action_values");
-    // Real, deliberately narrower than campaign-level's "maximum"
-    // backfill window — ad-level data is a genuinely new, unproven
-    // addition; starting narrow (30 days) rather than requesting Meta's
-    // full history reduces the size and risk of this first real run.
-    // Widening later is a one-line change, not a design change — same
-    // reasoning already applied to the original 90-day campaign window.
     insightsUrl.searchParams.set("date_preset", "last_30d");
 
-    // TEMPORARY, more direct diagnostic: fetch the raw response
-    // directly, bypassing fetchAllPages, to see exactly what Meta
-    // returns for this specific request - a real error message in the
-    // body, an empty-but-valid response, or something fetchAllPages
-    // itself might be silently filtering out.
     const rawRes = await fetch(insightsUrl.toString());
     const rawBody = await rawRes.text();
-    console.error(`[syncAdInsights][RAW] status: ${rawRes.status}, body: ${rawBody.slice(0, 1000)}`);
+    await debugLog("syncAdInsights-raw-response", `status: ${rawRes.status}, body: ${rawBody.slice(0, 1800)}`);
 
     const rows = await fetchAllPages<{
       ad_id: string; impressions?: string; clicks?: string; spend?: string; ctr?: string; reach?: string; frequency?: string;
@@ -75,7 +82,7 @@ export async function syncAdInsights(supabase: SupabaseClient, platformAccountId
       action_values?: Array<{ action_type: string; value: string }>;
     }>(insightsUrl.toString(), `ad insights fetch for platform_account ${platformAccountId}`);
 
-    console.error(`[syncAdInsights] Meta returned ${rows.length} real ad-level rows for platform_account ${platformAccountId}`);
+    await debugLog("syncAdInsights-row-count", `${rows.length} real ad-level rows`);
 
     if (rows.length === 0) return;
 
